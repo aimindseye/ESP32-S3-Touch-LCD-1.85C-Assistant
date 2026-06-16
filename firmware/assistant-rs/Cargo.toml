@@ -1,0 +1,37 @@
+﻿[package]
+name = "esp32-s3-touch-lcd-185c-assistant"
+version = "0.1.1"
+edition = "2021"
+resolver = "2"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+debug = false
+strip = true
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[dependencies]
+anyhow = "1"
+log = "0.4"
+
+esp-idf-svc = "0.51"
+esp-idf-hal = "0.45.2"
+esp-idf-sys = { version = "0.36", features = ["binstart"] }
+
+embedded-svc = "0.28"
+embedded-hal = "1"
+
+[build-dependencies]
+embuild = "0.33"
+
+[package.metadata.esp-idf-sys]
+esp_idf_version = "v5.3.2"
+esp_idf_sdkconfig_defaults = ["sdkconfig.defaults"]
+
+[[package.metadata.esp-idf-sys.extra_components]]
+component_dirs = ["components/st77916_shim"]
