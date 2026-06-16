@@ -1,0 +1,82 @@
+# === Rust / Cargo ===
+/target/
+Cargo.lock
+
+# Keep lockfile if this becomes an application repo and you want reproducible builds.
+#! Cargo.lock
+
+# === Espressif / embuild / ESP-IDF generated state ===
+.embuild/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+
+# CMake / Ninja / ESP-IDF intermediate outputs that may appear in components/examples
+/build/
+/cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+cmake_install.cmake
+build.ninja
+.ninja_deps
+.ninja_log
+
+# === Rust analyzer / tool metadata ===
+.rustc_info.json
+
+# === Logs / serial dumps / local notes ===
+*.log
+*.trace
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# === Python caches (often created by ESP-IDF helpers/tools) ===
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# === IDE / editor ===
+.vscode/
+.idea/
+*.iml
+
+# === macOS ===
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# === Windows ===
+Thumbs.db
+Desktop.ini
+
+# === Local env / secrets ===
+.env
+.env.*
+!.env.example
+
+# === Generated binaries / firmware artifacts ===
+*.elf
+*.bin
+*.hex
+*.map
+
+# === Optional local docs / captures ===
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp4
+*.mov
+.DS_Store
+
+# Uncomment below if you do NOT want local screenshots/videos in repo
+# /captures/
+# /screenshots/
+# /videos/
