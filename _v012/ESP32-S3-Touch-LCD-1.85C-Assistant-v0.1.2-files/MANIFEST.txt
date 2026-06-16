@@ -1,0 +1,16 @@
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/APPLY_v0.1.2.md
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/MANIFEST.txt
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/docs/RELEASE_v0.1.2_RUST_ASSISTANT_APP_SHELL.md
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/.cargo/config.toml
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/Cargo.toml
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/build.rs
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/partitions.csv
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/sdkconfig.defaults
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/src/app/mod.rs
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/src/app/model.rs
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/src/app/pages.rs
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/src/main.rs
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/scripts/build_assistant_rs.ps1
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/scripts/fix_assistant_partition_path.ps1
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/scripts/flash_assistant_rs.ps1
+ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/scripts/validate_rust_assistant_repo.ps1
