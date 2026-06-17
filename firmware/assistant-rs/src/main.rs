@@ -5,7 +5,7 @@ mod ffi;
 
 use anyhow::{bail, Result};
 use app::{
-    model::{CardId, OnboardModel},
+    model::{ButtonName, ButtonPressKind, OnboardModel, UiIntent},
     pages::{AssistantPage, ALL_PAGES},
 };
 use core::{ffi::c_void, mem::size_of, ptr::NonNull, slice};
@@ -34,60 +34,296 @@ use std::{
 
 const W: usize = 360;
 const H: usize = 360;
+const CX: i32 = 180;
+const CY: i32 = 180;
+const R_OUTER: i32 = 178;
 
-// Full-screen render. Let the physical bezel crop the corners.
-const BG: u16 = 0x0841;
 const BLACK: u16 = 0x0000;
+const BG: u16 = 0x0841;
+const RING: u16 = 0x18C3;
 const WHITE: u16 = 0xFFFF;
-const SURFACE: u16 = 0x2104;
-const SURFACE_2: u16 = 0x18C3;
-const PANEL_BG: u16 = 0x2945;
+const MUTED: u16 = 0xA514;
 
 const ACCENT_HOME: u16 = 0x07FF;
 const ACCENT_WEATHER: u16 = 0x07E0;
 const ACCENT_MUSIC: u16 = 0x4A69;
 const ACCENT_SETTINGS: u16 = 0xFFE0;
-
-const CARD_RTC: u16 = 0x07E0;
-const CARD_TOUCH: u16 = 0xF81F;
-const CARD_FLASH: u16 = 0xFD20;
-const CARD_PSRAM: u16 = 0xA53F;
-const CARD_BAT: u16 = 0xFFE0;
-const CARD_WIFI: u16 = 0x07FF;
-const CARD_SD: u16 = 0xC618;
-const CARD_BL: u16 = 0x2D7F;
-
 const STATUS_OK: u16 = 0x07E0;
 const STATUS_BAD: u16 = 0xF800;
 
-// Centered safe-content rectangle inside round display.
-const PANEL_X: i32 = 34;
-const PANEL_Y: i32 = 48;
-const PANEL_W: i32 = 292;
-const PANEL_H: i32 = 252;
+const TOP_STATUS_Y: i32 = 18;
+const TITLE_Y: i32 = 70;
+const SUBTITLE_Y: i32 = 112;
+const FOOTER_DOTS_Y: i32 = 324;
 
-// Header lives inside panel.
-const HEADER_X: i32 = PANEL_X + 8;
-const HEADER_Y: i32 = PANEL_Y + 10;
-const HEADER_H: i32 = 22;
-const TAB_W: i32 = 65;
-const TAB_GAP: i32 = 4;
-
-// Grid lives inside panel.
-const GRID_X: i32 = PANEL_X + 12;
-const GRID_Y: i32 = PANEL_Y + 44;
-const GAP_X: i32 = 10;
-const ROW_GAP: i32 = 8;
-const CARD_W: i32 = 129;
-const CARD_H: i32 = 40;
-
-// Footer lives inside panel.
-const FOOTER_X: i32 = PANEL_X + 22;
-const FOOTER_Y: i32 = PANEL_Y + 236;
-const FOOTER_W: i32 = PANEL_W - 44;
-const FOOTER_H: i32 = 12;
+const TOUCH_POLL_MS: u64 = 8;
+const BUTTON_POLL_MS: u64 = 25;
+const POWER_LONG_PRESS_MS: u64 = 850;
+const BUTTON_DEBOUNCE_MS: u64 = 40;
+const BATTERY_REFRESH_MS: u64 = 5_000;
+const WIFI_REFRESH_MS: u64 = 30_000;
+const RTC_REFRESH_MS: u64 = 1_000;
+const TOUCH_TAP_MAX_MS: u64 = 450;
+const TAP_MOVEMENT_MAX_PX: i16 = 25;
+const TOUCH_NAV_COOLDOWN_MS: u64 = 300;
+const TOUCH_ACTIVE_POLL_WINDOW_MS: u64 = 180;
+const TOUCH_NO_TOUCH_FINISH_COUNT: u8 = 3;
+const TOUCH_GESTURE_SPAN_PREFER_PX: i16 = 35;
+const UNIVERSAL_SWIPE_MIN_DX: i16 = 20;
+const CENTER_TAP_X_MIN: u16 = 95;
+const CENTER_TAP_X_MAX: u16 = 265;
+const CENTER_TAP_Y_MIN: u16 = 95;
+const CENTER_TAP_Y_MAX: u16 = 285;
+const CENTER_TAP_MAX_MOVE_PX: i16 = 12;
+const CST816_GESTURE_LEFT: u8 = 0x03;
+const CST816_GESTURE_RIGHT: u8 = 0x04;
+const RENDER_MIN_INTERVAL_MS: u64 = 80;
 
 const BAT_ATTEN: adc_atten_t = attenuation::DB_11;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ButtonEvent {
+    Short,
+    Long,
+}
+
+struct ButtonTracker {
+    down: bool,
+    pressed_at: Option<Instant>,
+    long_sent: bool,
+    long_press: Duration,
+}
+
+impl ButtonTracker {
+    fn new(long_press: Duration) -> Self {
+        Self {
+            down: false,
+            pressed_at: None,
+            long_sent: false,
+            long_press,
+        }
+    }
+
+    fn update(&mut self, now: Instant, is_down: bool) -> Option<ButtonEvent> {
+        if is_down {
+            if !self.down {
+                self.down = true;
+                self.pressed_at = Some(now);
+                self.long_sent = false;
+                return None;
+            }
+
+            if !self.long_sent {
+                if let Some(start) = self.pressed_at {
+                    if now.duration_since(start) >= self.long_press {
+                        self.long_sent = true;
+                        return Some(ButtonEvent::Long);
+                    }
+                }
+            }
+
+            None
+        } else if self.down {
+            self.down = false;
+            let elapsed = self
+                .pressed_at
+                .map(|start| now.duration_since(start))
+                .unwrap_or_default();
+            self.pressed_at = None;
+
+            if !self.long_sent && elapsed >= Duration::from_millis(BUTTON_DEBOUNCE_MS) {
+                Some(ButtonEvent::Short)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TouchSummary {
+    touch_id: u32,
+    sample_count: u16,
+    finish_reason: &'static str,
+    start_x: u16,
+    start_y: u16,
+    end_x: u16,
+    end_y: u16,
+    min_x: u16,
+    max_x: u16,
+    min_y: u16,
+    max_y: u16,
+    dx: i16,
+    dy: i16,
+    span_x: i16,
+    span_y: i16,
+    duration_ms: u128,
+    gesture: u8,
+}
+
+#[derive(Debug, Default)]
+struct TouchTracker {
+    active: bool,
+    touch_id: u32,
+    next_touch_id: u32,
+    sample_count: u16,
+    no_touch_count: u8,
+    start_x: u16,
+    start_y: u16,
+    last_x: u16,
+    last_y: u16,
+    min_x: u16,
+    max_x: u16,
+    min_y: u16,
+    max_y: u16,
+    start_at: Option<Instant>,
+    last_seen: Option<Instant>,
+    gesture: u8,
+}
+
+impl TouchTracker {
+    fn reset_fields(&mut self) {
+        self.active = false;
+        self.sample_count = 0;
+        self.no_touch_count = 0;
+        self.start_x = 0;
+        self.start_y = 0;
+        self.last_x = 0;
+        self.last_y = 0;
+        self.min_x = 0;
+        self.max_x = 0;
+        self.min_y = 0;
+        self.max_y = 0;
+        self.start_at = None;
+        self.last_seen = None;
+        self.gesture = 0;
+    }
+
+    fn begin(&mut self, now: Instant, x: u16, y: u16, gesture: u8) {
+        self.reset_fields();
+        self.next_touch_id = self.next_touch_id.wrapping_add(1);
+        if self.next_touch_id == 0 {
+            self.next_touch_id = 1;
+        }
+
+        self.active = true;
+        self.touch_id = self.next_touch_id;
+        self.sample_count = 0;
+        self.no_touch_count = 0;
+        self.start_x = x;
+        self.start_y = y;
+        self.last_x = x;
+        self.last_y = y;
+        self.min_x = x;
+        self.max_x = x;
+        self.min_y = y;
+        self.max_y = y;
+        self.start_at = Some(now);
+        self.last_seen = Some(now);
+        self.gesture = gesture;
+
+        println!("touch-track: begin id={}", self.touch_id);
+        self.record_sample(now, "int", x, y, gesture);
+    }
+
+    fn record_sample(&mut self, now: Instant, source: &'static str, x: u16, y: u16, gesture: u8) {
+        self.last_x = x;
+        self.last_y = y;
+        self.min_x = self.min_x.min(x);
+        self.max_x = self.max_x.max(x);
+        self.min_y = self.min_y.min(y);
+        self.max_y = self.max_y.max(y);
+        self.last_seen = Some(now);
+        self.no_touch_count = 0;
+        self.sample_count = self.sample_count.saturating_add(1);
+
+        if gesture != 0 {
+            self.gesture = gesture;
+        }
+
+        println!(
+            "touch-track: sample id={} source={} x={} y={} gesture=0x{:02X}",
+            self.touch_id, source, x, y, gesture
+        );
+    }
+
+    fn update_down(&mut self, now: Instant, source: &'static str, x: u16, y: u16, gesture: u8) {
+        if !self.active {
+            self.begin(now, x, y, gesture);
+        } else {
+            self.record_sample(now, source, x, y, gesture);
+        }
+    }
+
+    fn note_no_touch(&mut self) {
+        if !self.active {
+            return;
+        }
+
+        self.no_touch_count = self.no_touch_count.saturating_add(1);
+        println!(
+            "touch-track: no-touch id={} count={}",
+            self.touch_id, self.no_touch_count
+        );
+    }
+
+    fn active_elapsed(&self, now: Instant) -> Duration {
+        self.start_at
+            .map(|start| now.duration_since(start))
+            .unwrap_or_default()
+    }
+
+    fn finish_reason(&self, now: Instant) -> Option<&'static str> {
+        if !self.active {
+            return None;
+        }
+
+        if self.no_touch_count >= TOUCH_NO_TOUCH_FINISH_COUNT {
+            return Some("no-touch");
+        }
+
+        if self.active_elapsed(now) >= Duration::from_millis(TOUCH_ACTIVE_POLL_WINDOW_MS) {
+            return Some("window");
+        }
+
+        None
+    }
+
+    fn finish(&mut self, now: Instant, reason: &'static str) -> Option<TouchSummary> {
+        if !self.active {
+            return None;
+        }
+
+        let start = self.start_at.unwrap_or(now);
+        let duration_ms = now.duration_since(start).as_millis();
+        let summary = TouchSummary {
+            touch_id: self.touch_id,
+            sample_count: self.sample_count,
+            finish_reason: reason,
+            start_x: self.start_x,
+            start_y: self.start_y,
+            end_x: self.last_x,
+            end_y: self.last_y,
+            min_x: self.min_x,
+            max_x: self.max_x,
+            min_y: self.min_y,
+            max_y: self.max_y,
+            dx: self.last_x as i16 - self.start_x as i16,
+            dy: self.last_y as i16 - self.start_y as i16,
+            span_x: self.max_x as i16 - self.min_x as i16,
+            span_y: self.max_y as i16 - self.min_y as i16,
+            duration_ms,
+            gesture: self.gesture,
+        };
+
+        println!("touch-track: reset id={}", self.touch_id);
+        self.reset_fields();
+
+        Some(summary)
+    }
+}
 
 struct FrameBuffer {
     ptr: NonNull<u16>,
@@ -148,6 +384,9 @@ fn run_app() -> Result<()> {
     let pins = peripherals.pins;
     let modem = peripherals.modem;
 
+    let mut power_button = PinDriver::input(pins.gpio6)?;
+    power_button.set_pull(Pull::Up)?;
+
     let mut backlight = PinDriver::output(pins.gpio5)?;
     backlight.set_low()?;
 
@@ -184,7 +423,20 @@ fn run_app() -> Result<()> {
 
     println!("\n=== {} ===", board::BOARD_NAME);
     println!("Hybrid Rust + ESP-IDF display backend");
-    println!("Assistant app shell with Home/Weather/Music/Settings pages");
+    println!("Active CST816 Polling and Gesture-First Navigation");
+    println!("r12 touch contract: INT starts tracking, active poll gathers samples");
+    println!("r3a build fix: last_render initialized before first render");
+    println!("ADC battery read: inline accepted baseline path");
+    println!("Keep v0.1.3 circular UI direction");
+    println!("Watch UI polish: no divider lines, dim one-pixel outer ring");
+    println!("touch-loop: poll={}ms", TOUCH_POLL_MS);
+    println!("button-loop: poll={}ms", BUTTON_POLL_MS);
+    println!("Touch classifier: gesture-first, span swipe dx>=20, active poll=8ms window=180ms");
+    println!("Touch navigation cooldown={}ms", TOUCH_NAV_COOLDOWN_MS);
+    println!("BOOT runtime control reserved while USB monitor is attached");
+    println!("POWER candidate logging: GPIO6 experimental home/menu");
+    println!("gpio-status: initialized once");
+    println!("gpio-status: periodic reconfigure disabled");
     println!("Home page preserves PSRAM framebuffer + real BAT/WIFI/SD behavior");
     println!("I2C probes:");
     println!(
@@ -219,7 +471,6 @@ fn run_app() -> Result<()> {
     println!("panel init ok");
 
     backlight.set_high()?;
-
     println!("backlight on");
 
     pulse_exio(
@@ -257,88 +508,107 @@ fn run_app() -> Result<()> {
             ((adc_mv * board::BATTERY_DIVIDER_SCALE) / board::BATTERY_MEASUREMENT_OFFSET) as u16;
         model.battery_mv = Some(battery_mv);
     }
-
     refresh_wifi(&mut model, &mut wifi);
     refresh_sd(&mut model);
 
-    draw_assistant_page(&model, frame.as_mut_slice())?;
-    println!("home page rendered");
+    let mut dirty = true;
+    let mut last_render = Instant::now() - Duration::from_millis(RENDER_MIN_INTERVAL_MS);
+    render_if_dirty(&mut dirty, &model, frame.as_mut_slice(), true, &mut last_render)?;
+    println!("polished circular home page rendered");
 
-    let mut touch_latched = false;
-    let mut last_fast = Instant::now();
+    let mut touch_tracker = TouchTracker::default();
+    let mut power_tracker = ButtonTracker::new(Duration::from_millis(POWER_LONG_PRESS_MS));
+    let mut last_touch_poll = Instant::now();
+    let mut last_button_poll = Instant::now();
+    let mut last_rtc = Instant::now();
+    let mut last_battery = Instant::now();
     let mut last_wifi = Instant::now();
-    let mut last_sd = Instant::now();
+    let mut last_navigation = Instant::now() - Duration::from_millis(TOUCH_NAV_COOLDOWN_MS);
 
     loop {
-        if touch_int.is_low() {
-            if !touch_latched {
-                touch_latched = true;
+        let now = Instant::now();
 
+        if last_touch_poll.elapsed() >= Duration::from_millis(TOUCH_POLL_MS) {
+            last_touch_poll = now;
+
+            if touch_tracker.active {
+                match touch.read_touch(&mut i2c, board::CST816_ADDR) {
+                    Ok(point) if point.fingers > 0 => {
+                        model.note_touch(point.x, point.y, point.fingers, point.gesture);
+                        touch_tracker.update_down(now, "poll", point.x, point.y, point.gesture);
+                    }
+                    Ok(_) => {
+                        touch_tracker.note_no_touch();
+                    }
+                    Err(_) => {
+                        touch_tracker.note_no_touch();
+                    }
+                }
+
+                if let Some(reason) = touch_tracker.finish_reason(now) {
+                    if let Some(summary) = touch_tracker.finish(now, reason) {
+                        if process_touch_summary(&mut model, summary, now, &mut last_navigation) {
+                            dirty = true;
+                        }
+                    }
+                }
+            } else if touch_int.is_low() {
                 if let Ok(point) = touch.read_touch(&mut i2c, board::CST816_ADDR) {
                     if point.fingers > 0 {
-                        println!(
-                            "touch: gesture=0x{:02X} fingers={} x={} y={}",
-                            point.gesture, point.fingers, point.x, point.y
-                        );
-
-                        model.note_touch(point.x, point.y, point.fingers);
-
-                        if let Some(page) = page_from_point(point.x as i32, point.y as i32) {
-                            model.set_page(page);
-                            println!("page: {:?}", page);
-                        } else if model.current_page == AssistantPage::Home {
-                            model.selected = card_from_point(point.x as i32, point.y as i32);
-                        }
-
-                        draw_assistant_page(&model, frame.as_mut_slice())?;
-                        println!("repaint ok");
+                        model.note_touch(point.x, point.y, point.fingers, point.gesture);
+                        touch_tracker.update_down(now, "int", point.x, point.y, point.gesture);
                     }
                 }
             }
-        } else {
-            touch_latched = false;
         }
 
-        if last_fast.elapsed() >= Duration::from_secs(1) {
-            last_fast = Instant::now();
+        if last_button_poll.elapsed() >= Duration::from_millis(BUTTON_POLL_MS) {
+            last_button_poll = now;
+            if let Some(event) = power_tracker.update(now, power_button.is_low()) {
+                handle_button_event(&mut model, ButtonName::Power, event);
+                dirty = true;
+            }
+        }
 
+        if !touch_tracker.active && last_rtc.elapsed() >= Duration::from_millis(RTC_REFRESH_MS) {
+            last_rtc = now;
             if let Ok(dt) = rtc.read_datetime(&mut i2c, board::PCF85063_ADDR) {
                 model.update_rtc(dt);
-
-                println!(
-                    "diag: rtc={:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                    2000 + dt.year as u16,
-                    dt.month,
-                    dt.day,
-                    dt.hour,
-                    dt.minute,
-                    dt.second
-                );
+                if model.current_page == AssistantPage::Home {
+                    dirty = true;
+                }
             }
+        }
 
+        if !touch_tracker.active && last_battery.elapsed() >= Duration::from_millis(BATTERY_REFRESH_MS) {
+            last_battery = now;
             if let Ok(raw) = adc.read(&mut bat_pin) {
                 let adc_mv = (raw as f32 / 4095.0) * 3300.0;
                 let battery_mv = ((adc_mv * board::BATTERY_DIVIDER_SCALE)
                     / board::BATTERY_MEASUREMENT_OFFSET) as u16;
                 model.battery_mv = Some(battery_mv);
             }
-
-            draw_assistant_page(&model, frame.as_mut_slice())?;
+            if model.current_page == AssistantPage::Home {
+                dirty = true;
+            }
         }
 
-        if last_wifi.elapsed() >= Duration::from_secs(30) {
-            last_wifi = Instant::now();
+        if !touch_tracker.active && last_wifi.elapsed() >= Duration::from_millis(WIFI_REFRESH_MS) {
+            last_wifi = now;
             refresh_wifi(&mut model, &mut wifi);
-            draw_assistant_page(&model, frame.as_mut_slice())?;
+            if model.current_page == AssistantPage::Home {
+                dirty = true;
+            }
         }
 
-        if last_sd.elapsed() >= Duration::from_secs(30) {
-            last_sd = Instant::now();
-            refresh_sd(&mut model);
-            draw_assistant_page(&model, frame.as_mut_slice())?;
-        }
-
-        thread::sleep(Duration::from_millis(50));
+        render_if_dirty(
+            &mut dirty,
+            &model,
+            frame.as_mut_slice(),
+            !touch_tracker.active,
+            &mut last_render,
+        )?;
+        thread::sleep(Duration::from_millis(5));
     }
 }
 
@@ -363,22 +633,260 @@ fn refresh_sd(model: &mut OnboardModel) {
     };
 }
 
-fn draw_assistant_page(model: &OnboardModel, frame: &mut [u16]) -> Result<()> {
-    frame.fill(BG);
-
-    fill_rect(frame, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, PANEL_BG);
-    stroke_rect(frame, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, SURFACE_2);
-
-    draw_page_tabs(model, frame);
-
-    match model.current_page {
-        AssistantPage::Home => draw_home_content(model, frame),
-        AssistantPage::Weather => draw_placeholder_page(model, frame, AssistantPage::Weather),
-        AssistantPage::Music => draw_placeholder_page(model, frame, AssistantPage::Music),
-        AssistantPage::Settings => draw_placeholder_page(model, frame, AssistantPage::Settings),
+fn render_if_dirty(
+    dirty: &mut bool,
+    model: &OnboardModel,
+    frame: &mut [u16],
+    allow_render: bool,
+    last_render: &mut Instant,
+) -> Result<()> {
+    if !*dirty || !allow_render {
+        return Ok(());
     }
 
-    draw_status_footer(model, frame);
+    if last_render.elapsed() < Duration::from_millis(RENDER_MIN_INTERVAL_MS) {
+        return Ok(());
+    }
+
+    draw_assistant_page(model, frame)?;
+    println!("render: coalesced repaint ok");
+    *last_render = Instant::now();
+    *dirty = false;
+    Ok(())
+}
+
+fn process_touch_summary(
+    model: &mut OnboardModel,
+    summary: TouchSummary,
+    now: Instant,
+    last_navigation: &mut Instant,
+) -> bool {
+    println!(
+        "touch-track: finish id={} reason={} samples={} start=({}, {}) end=({}, {}) minmax=({}, {})..({}, {}) span={} dx={} dy={} ms={} gesture=0x{:02X}",
+        summary.touch_id,
+        summary.finish_reason,
+        summary.sample_count,
+        summary.start_x,
+        summary.start_y,
+        summary.end_x,
+        summary.end_y,
+        summary.min_x,
+        summary.min_y,
+        summary.max_x,
+        summary.max_y,
+        summary.span_x,
+        summary.dx,
+        summary.dy,
+        summary.duration_ms,
+        summary.gesture
+    );
+
+    if let Some(intent) = intent_from_touch_summary(&summary) {
+        if matches!(intent, UiIntent::NextPage | UiIntent::PreviousPage) {
+            if now.duration_since(*last_navigation) < Duration::from_millis(TOUCH_NAV_COOLDOWN_MS) {
+                println!("touch: navigation ignored during cooldown");
+                return false;
+            }
+            *last_navigation = now;
+        }
+
+        handle_intent(model, intent);
+        true
+    } else {
+        println!("touch: ignored movement/tap outside classifier thresholds");
+        false
+    }
+}
+
+fn handle_button_event(model: &mut OnboardModel, button: ButtonName, event: ButtonEvent) {
+    let kind = match event {
+        ButtonEvent::Short => ButtonPressKind::Short,
+        ButtonEvent::Long => ButtonPressKind::Long,
+    };
+    model.note_button(button, kind);
+
+    match (button, event) {
+        (ButtonName::Boot, ButtonEvent::Short) => {
+            println!("button: BOOT short -> reserved");
+            model.note_intent(UiIntent::BootReserved);
+        }
+        (ButtonName::Boot, ButtonEvent::Long) => {
+            println!("button: BOOT long -> reserved");
+            model.note_intent(UiIntent::BootReserved);
+        }
+        (ButtonName::Power, ButtonEvent::Short) => {
+            println!("button: POWER short -> back/home");
+            handle_intent(model, UiIntent::BackHome);
+        }
+        (ButtonName::Power, ButtonEvent::Long) => {
+            println!("button: POWER long -> power menu placeholder");
+            handle_intent(model, UiIntent::PowerMenu);
+        }
+    }
+}
+
+fn handle_intent(model: &mut OnboardModel, intent: UiIntent) {
+    match intent {
+        UiIntent::NextPage => {
+            model.next_page();
+            println!("nav: NextPage -> {:?}", model.current_page);
+        }
+        UiIntent::PreviousPage => {
+            model.previous_page();
+            println!("nav: PreviousPage -> {:?}", model.current_page);
+        }
+        UiIntent::Select => {
+            model.note_intent(UiIntent::Select);
+            println!("action: Select on {:?}", model.current_page);
+        }
+        UiIntent::BackHome => {
+            model.set_page(AssistantPage::Home);
+            model.note_intent(UiIntent::BackHome);
+            println!("nav: BackHome -> Home");
+        }
+        UiIntent::AssistantHold => {
+            model.note_intent(UiIntent::AssistantHold);
+            println!("action: Assistant placeholder");
+        }
+        UiIntent::BootReserved => {
+            model.note_intent(UiIntent::BootReserved);
+            println!("action: BOOT reserved");
+        }
+        UiIntent::PowerMenu => {
+            model.note_intent(UiIntent::PowerMenu);
+            println!("action: Power menu placeholder");
+        }
+    }
+}
+
+fn intent_from_touch_summary(summary: &TouchSummary) -> Option<UiIntent> {
+    let left_travel = summary.start_x as i16 - summary.min_x as i16;
+    let right_travel = summary.max_x as i16 - summary.start_x as i16;
+    let signed_span_dx = if left_travel >= right_travel {
+        -left_travel
+    } else {
+        right_travel
+    };
+    let abs_span_dx = signed_span_dx.abs();
+    let abs_span_y = summary.span_y.abs();
+    let horizontal_dominant = (abs_span_dx as i32 * 2) > (abs_span_y as i32 * 3);
+
+    let gesture_intent = match summary.gesture {
+        CST816_GESTURE_LEFT => Some(UiIntent::NextPage),
+        CST816_GESTURE_RIGHT => Some(UiIntent::PreviousPage),
+        _ => None,
+    };
+
+    let span_intent = if abs_span_dx >= UNIVERSAL_SWIPE_MIN_DX && horizontal_dominant {
+        if signed_span_dx < 0 {
+            Some(UiIntent::NextPage)
+        } else {
+            Some(UiIntent::PreviousPage)
+        }
+    } else {
+        None
+    };
+
+    if let Some(gesture_intent) = gesture_intent {
+        if let Some(span_intent) = span_intent {
+            if gesture_intent != span_intent {
+                println!(
+                    "touch-class: gesture/span disagree gesture=0x{:02X} span_dx={} span={} prefer={}",
+                    summary.gesture,
+                    signed_span_dx,
+                    summary.span_x,
+                    if abs_span_dx < TOUCH_GESTURE_SPAN_PREFER_PX {
+                        "gesture"
+                    } else {
+                        "span"
+                    }
+                );
+
+                if abs_span_dx >= TOUCH_GESTURE_SPAN_PREFER_PX {
+                    return log_span_intent(span_intent);
+                }
+            }
+        }
+
+        return log_gesture_intent(gesture_intent);
+    }
+
+    if let Some(span_intent) = span_intent {
+        return log_span_intent(span_intent);
+    }
+
+    let center_tap = summary.span_x <= CENTER_TAP_MAX_MOVE_PX
+        && summary.span_y <= CENTER_TAP_MAX_MOVE_PX
+        && summary.duration_ms <= TOUCH_TAP_MAX_MS as u128
+        && (CENTER_TAP_X_MIN..=CENTER_TAP_X_MAX).contains(&summary.end_x)
+        && (CENTER_TAP_Y_MIN..=CENTER_TAP_Y_MAX).contains(&summary.end_y);
+
+    if center_tap {
+        println!("touch-class: center-tap accepted");
+        return Some(UiIntent::Select);
+    }
+
+    if summary.sample_count < 2 {
+        println!(
+            "touch-class: ignored insufficient samples samples={} dx={} dy={} span={} gesture=0x{:02X}",
+            summary.sample_count, summary.dx, summary.dy, summary.span_x, summary.gesture
+        );
+        return None;
+    }
+
+    if abs_span_y >= UNIVERSAL_SWIPE_MIN_DX && abs_span_y > abs_span_dx {
+        println!(
+            "touch-class: ignored vertical swipe dx={} dy={} span={} gesture=0x{:02X}",
+            summary.dx, summary.dy, summary.span_x, summary.gesture
+        );
+        return None;
+    }
+
+    println!(
+        "touch-class: ignored below-threshold movement dx={} dy={} span={} gesture=0x{:02X}",
+        summary.dx, summary.dy, summary.span_x, summary.gesture
+    );
+    None
+}
+
+fn log_gesture_intent(intent: UiIntent) -> Option<UiIntent> {
+    match intent {
+        UiIntent::NextPage => println!("touch-class: gesture-left accepted next"),
+        UiIntent::PreviousPage => println!("touch-class: gesture-right accepted previous"),
+        _ => {}
+    }
+
+    Some(intent)
+}
+
+fn log_span_intent(intent: UiIntent) -> Option<UiIntent> {
+    match intent {
+        UiIntent::NextPage => println!("touch-class: span swipe-left accepted next"),
+        UiIntent::PreviousPage => println!("touch-class: span swipe-right accepted previous"),
+        _ => {}
+    }
+
+    Some(intent)
+}
+
+
+fn draw_assistant_page(model: &OnboardModel, frame: &mut [u16]) -> Result<()> {
+    frame.fill(BLACK);
+    fill_circle(frame, CX, CY, R_OUTER, BG);
+    stroke_circle(frame, CX, CY, R_OUTER, RING);
+
+    draw_top_status(model, frame);
+    draw_page_title(model.current_page, frame);
+
+    match model.current_page {
+        AssistantPage::Home => draw_home_tile(model, frame),
+        AssistantPage::Weather => draw_weather_tile(model, frame),
+        AssistantPage::Music => draw_music_tile(model, frame),
+        AssistantPage::Settings => draw_settings_tile(model, frame),
+    }
+
+    draw_gesture_hint(frame);
+    draw_page_dots(model, frame);
 
     if !unsafe { ffi::st77916_panel_draw_rgb565(0, 0, 359, 359, frame.as_mut_ptr()) } {
         bail!("st77916_panel_draw_rgb565 returned false");
@@ -387,167 +895,79 @@ fn draw_assistant_page(model: &OnboardModel, frame: &mut [u16]) -> Result<()> {
     Ok(())
 }
 
-fn draw_page_tabs(model: &OnboardModel, frame: &mut [u16]) {
+
+fn draw_top_status(model: &OnboardModel, frame: &mut [u16]) {
+    draw_status_dot(frame, 116, TOP_STATUS_Y, model.wifi_count.is_some(), "W");
+    draw_status_dot(frame, 180, TOP_STATUS_Y, model.sd_present, "S");
+    draw_status_dot(frame, 244, TOP_STATUS_Y, model.battery_mv.is_some(), "B");
+}
+
+fn draw_page_title(page: AssistantPage, frame: &mut [u16]) {
+    draw_text_centered(frame, TITLE_Y, page.title(), accent_for_page(page), 2);
+}
+
+fn draw_home_tile(model: &OnboardModel, frame: &mut [u16]) {
+    draw_text_centered(frame, 150, &model.rtc_hms(), WHITE, 5);
+    draw_text_centered(frame, 198, "ASSISTANT READY", WHITE, 1);
+    draw_text_centered(frame, 220, model.last_action, ACCENT_HOME, 2);
+    draw_text_centered(frame, 266, "CENTER ASK", MUTED, 1);
+    draw_text_centered(frame, 286, "POWER HOME", MUTED, 1);
+}
+
+fn draw_weather_tile(model: &OnboardModel, frame: &mut [u16]) {
+    draw_text_centered(frame, 150, "--", WHITE, 5);
+    draw_text_centered(frame, 198, "NO LOCATION", WHITE, 1);
+    draw_text_centered(frame, 220, "DATA LATER", ACCENT_WEATHER, 1);
+    draw_text_centered(frame, 266, "CENTER DETAILS", MUTED, 1);
+    draw_text_centered(frame, 286, &format!("RTC {}", model.rtc_hms()), MUTED, 1);
+}
+
+fn draw_music_tile(_model: &OnboardModel, frame: &mut [u16]) {
+    draw_text_centered(frame, 150, "NO TRACK", WHITE, 3);
+    draw_text_centered(frame, 198, "PLAYER LATER", WHITE, 1);
+    draw_text_centered(frame, 220, "SD AUDIO", ACCENT_MUSIC, 1);
+    draw_text_centered(frame, 266, "CENTER PLAY", MUTED, 1);
+    draw_text_centered(frame, 286, "RIGHT NEXT", MUTED, 1);
+}
+
+fn draw_settings_tile(_model: &OnboardModel, frame: &mut [u16]) {
+    draw_text_centered(frame, SUBTITLE_Y, "SETTINGS", MUTED, 1);
+    draw_menu_item(frame, 146, "SYSTEM INFO", ACCENT_SETTINGS, true);
+    draw_menu_item(frame, 176, "BRIGHTNESS", WHITE, false);
+    draw_menu_item(frame, 206, "WI-FI", WHITE, false);
+    draw_menu_item(frame, 236, "ABOUT", WHITE, false);
+    draw_text_centered(frame, 286, "CENTER OPEN", MUTED, 1);
+}
+
+fn draw_gesture_hint(frame: &mut [u16]) {
+    draw_text_centered(frame, 306, "SWIPE ANYWHERE", MUTED, 1);
+}
+
+fn draw_menu_item(frame: &mut [u16], y: i32, text: &str, color: u16, selected: bool) {
+    if selected {
+        fill_circle(frame, 82, y - 4, 3, color);
+    }
+    draw_text_centered(frame, y, text, color, 1);
+}
+
+fn draw_status_dot(frame: &mut [u16], x: i32, y: i32, ok: bool, label: &str) {
+    let color = if ok { STATUS_OK } else { STATUS_BAD };
+    fill_circle(frame, x, y, 4, color);
+    let label_x = x - text_width(label, 1) / 2;
+    draw_text(frame, label_x, y + 14, label, MUTED, 1);
+}
+
+fn draw_page_dots(model: &OnboardModel, frame: &mut [u16]) {
+    let count = ALL_PAGES.len() as i32;
+    let spacing = 20;
+    let start_x = CX - ((count - 1) * spacing / 2);
+
     for (idx, page) in ALL_PAGES.iter().copied().enumerate() {
-        let x = HEADER_X + (idx as i32 * (TAB_W + TAB_GAP));
         let selected = page == model.current_page;
-        let accent = accent_for_page(page);
-        let fill = if selected { accent } else { SURFACE };
-        let text = if selected { BLACK } else { WHITE };
-
-        fill_rect(frame, x, HEADER_Y, TAB_W, HEADER_H, fill);
-        stroke_rect(frame, x, HEADER_Y, TAB_W, HEADER_H, SURFACE_2);
-        draw_text(frame, x + 5, HEADER_Y + 15, page.short_label(), text, 1);
+        let r = if selected { 5 } else { 3 };
+        let color = if selected { accent_for_page(page) } else { MUTED };
+        fill_circle(frame, start_x + idx as i32 * spacing, FOOTER_DOTS_Y, r, color);
     }
-}
-
-fn draw_home_content(model: &OnboardModel, frame: &mut [u16]) {
-    let rtc_sub = Some(model.rtc_ymd());
-    let touch_sub = model
-        .last_touch
-        .map(|p| format!("{:03},{:03}/{}", p.x, p.y, p.fingers));
-
-    let cards = [
-        (
-            CardId::Rtc,
-            GRID_X,
-            GRID_Y,
-            CARD_RTC,
-            "RTC",
-            model.rtc_hms(),
-            rtc_sub,
-        ),
-        (
-            CardId::Touch,
-            GRID_X + CARD_W + GAP_X,
-            GRID_Y,
-            CARD_TOUCH,
-            "TOUCH",
-            model.touch_count_text(),
-            touch_sub,
-        ),
-        (
-            CardId::Flash,
-            GRID_X,
-            GRID_Y + (CARD_H + ROW_GAP),
-            CARD_FLASH,
-            "FLASH",
-            model.flash_text(),
-            None,
-        ),
-        (
-            CardId::Psram,
-            GRID_X + CARD_W + GAP_X,
-            GRID_Y + (CARD_H + ROW_GAP),
-            CARD_PSRAM,
-            "PSRAM",
-            model.psram_text(),
-            None,
-        ),
-        (
-            CardId::Battery,
-            GRID_X,
-            GRID_Y + 2 * (CARD_H + ROW_GAP),
-            CARD_BAT,
-            "BAT",
-            model.battery_text(),
-            None,
-        ),
-        (
-            CardId::Wifi,
-            GRID_X + CARD_W + GAP_X,
-            GRID_Y + 2 * (CARD_H + ROW_GAP),
-            CARD_WIFI,
-            "WIFI",
-            model.wifi_text(),
-            None,
-        ),
-        (
-            CardId::Sd,
-            GRID_X,
-            GRID_Y + 3 * (CARD_H + ROW_GAP),
-            CARD_SD,
-            "SD",
-            model.sd_text(),
-            None,
-        ),
-        (
-            CardId::Backlight,
-            GRID_X + CARD_W + GAP_X,
-            GRID_Y + 3 * (CARD_H + ROW_GAP),
-            CARD_BL,
-            "BL",
-            model.backlight_text(),
-            None,
-        ),
-    ];
-
-    for (id, x, y, accent, title, value, sub) in cards {
-        draw_card(
-            frame,
-            x,
-            y,
-            CARD_W,
-            CARD_H,
-            title,
-            &value,
-            sub.as_deref(),
-            accent,
-            model.selected == Some(id),
-        );
-    }
-}
-
-fn draw_placeholder_page(model: &OnboardModel, frame: &mut [u16], page: AssistantPage) {
-    let accent = accent_for_page(page);
-    let title = page.title();
-
-    fill_rect(frame, GRID_X, GRID_Y, CARD_W * 2 + GAP_X, 168, SURFACE);
-    fill_rect(frame, GRID_X, GRID_Y, CARD_W * 2 + GAP_X, 4, accent);
-    stroke_rect(frame, GRID_X, GRID_Y, CARD_W * 2 + GAP_X, 168, SURFACE_2);
-
-    draw_text(frame, GRID_X + 14, GRID_Y + 28, title, WHITE, 1);
-    draw_text(frame, GRID_X + 14, GRID_Y + 50, "PLACEHOLDER", WHITE, 1);
-    draw_text(frame, GRID_X + 14, GRID_Y + 72, "V0.1.2 SHELL", WHITE, 1);
-
-    match page {
-        AssistantPage::Weather => {
-            draw_text(frame, GRID_X + 14, GRID_Y + 98, "LOCAL FORECAST", WHITE, 1);
-            draw_text(frame, GRID_X + 14, GRID_Y + 116, "DATA LATER", WHITE, 1);
-        }
-        AssistantPage::Music => {
-            draw_text(frame, GRID_X + 14, GRID_Y + 98, "SD AUDIO", WHITE, 1);
-            draw_text(frame, GRID_X + 14, GRID_Y + 116, "PLAYER LATER", WHITE, 1);
-        }
-        AssistantPage::Settings => {
-            draw_text(frame, GRID_X + 14, GRID_Y + 98, "DEVICE OPTIONS", WHITE, 1);
-            draw_text(frame, GRID_X + 14, GRID_Y + 116, "MENU LATER", WHITE, 1);
-        }
-        AssistantPage::Home => {}
-    }
-
-    draw_text(frame, GRID_X + 14, GRID_Y + 144, &format!("RTC {}", model.rtc_hms()), WHITE, 1);
-    draw_text(
-        frame,
-        GRID_X + 140,
-        GRID_Y + 144,
-        &format!("TOUCH {}", model.touch_count_text()),
-        WHITE,
-        1,
-    );
-}
-
-fn draw_status_footer(model: &OnboardModel, frame: &mut [u16]) {
-    fill_rect(frame, FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H, SURFACE_2);
-    draw_status_badge(frame, FOOTER_X + 10, FOOTER_Y + 3, "I2C", model.i2c_ok);
-    draw_status_badge(frame, FOOTER_X + 90, FOOTER_Y + 3, "RTC", model.rtc_ready);
-    draw_status_badge(
-        frame,
-        FOOTER_X + 170,
-        FOOTER_Y + 3,
-        "TOUCH",
-        model.touch_ready,
-    );
 }
 
 fn accent_for_page(page: AssistantPage) -> u16 {
@@ -557,88 +977,6 @@ fn accent_for_page(page: AssistantPage) -> u16 {
         AssistantPage::Music => ACCENT_MUSIC,
         AssistantPage::Settings => ACCENT_SETTINGS,
     }
-}
-
-fn draw_card(
-    frame: &mut [u16],
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    title: &str,
-    value: &str,
-    sub: Option<&str>,
-    accent: u16,
-    selected: bool,
-) {
-    fill_rect(frame, x, y, w, h, SURFACE);
-    fill_rect(frame, x, y, w, 3, accent);
-
-    let border = if selected { WHITE } else { SURFACE_2 };
-    stroke_rect(frame, x, y, w, h, border);
-
-    draw_text(frame, x + 5, y + 9, title, WHITE, 1);
-    draw_text(frame, x + 5, y + 19, value, WHITE, 1);
-
-    if let Some(subline) = sub {
-        draw_text(frame, x + 5, y + 29, subline, WHITE, 1);
-    }
-}
-
-fn draw_status_badge(frame: &mut [u16], x: i32, y: i32, label: &str, ok: bool) {
-    let color = if ok { STATUS_OK } else { STATUS_BAD };
-
-    fill_rect(frame, x, y, 6, 6, color);
-    stroke_rect(frame, x, y, 6, 6, WHITE);
-    draw_text(frame, x + 9, y + 6, label, WHITE, 1);
-}
-
-fn page_from_point(x: i32, y: i32) -> Option<AssistantPage> {
-    if !(HEADER_Y..HEADER_Y + HEADER_H).contains(&y) {
-        return None;
-    }
-
-    for (idx, page) in ALL_PAGES.iter().copied().enumerate() {
-        let tab_x = HEADER_X + (idx as i32 * (TAB_W + TAB_GAP));
-        if x >= tab_x && x < tab_x + TAB_W {
-            return Some(page);
-        }
-    }
-
-    None
-}
-
-fn card_from_point(x: i32, y: i32) -> Option<CardId> {
-    let rects = [
-        (CardId::Rtc, GRID_X, GRID_Y),
-        (CardId::Touch, GRID_X + CARD_W + GAP_X, GRID_Y),
-        (CardId::Flash, GRID_X, GRID_Y + (CARD_H + ROW_GAP)),
-        (
-            CardId::Psram,
-            GRID_X + CARD_W + GAP_X,
-            GRID_Y + (CARD_H + ROW_GAP),
-        ),
-        (CardId::Battery, GRID_X, GRID_Y + 2 * (CARD_H + ROW_GAP)),
-        (
-            CardId::Wifi,
-            GRID_X + CARD_W + GAP_X,
-            GRID_Y + 2 * (CARD_H + ROW_GAP),
-        ),
-        (CardId::Sd, GRID_X, GRID_Y + 3 * (CARD_H + ROW_GAP)),
-        (
-            CardId::Backlight,
-            GRID_X + CARD_W + GAP_X,
-            GRID_Y + 3 * (CARD_H + ROW_GAP),
-        ),
-    ];
-
-    for (id, rx, ry) in rects {
-        if x >= rx && x < rx + CARD_W && y >= ry && y < ry + CARD_H {
-            return Some(id);
-        }
-    }
-
-    None
 }
 
 fn pulse_exio<I2C>(exio: &mut Tca9554, i2c: &mut I2C, addr: u8, pin: u8)
@@ -652,13 +990,44 @@ where
     thread::sleep(Duration::from_millis(50));
 }
 
-fn inside_circle(_x: i32, _y: i32) -> bool {
-    true
+fn inside_circle(x: i32, y: i32) -> bool {
+    let dx = x - CX;
+    let dy = y - CY;
+    dx * dx + dy * dy <= R_OUTER * R_OUTER
 }
 
-#[allow(dead_code)]
-fn fill_circle_bg(frame: &mut [u16], color: u16) {
-    frame.fill(color);
+fn set_pixel(frame: &mut [u16], x: i32, y: i32, color: u16) {
+    if x >= 0 && y >= 0 && x < W as i32 && y < H as i32 && inside_circle(x, y) {
+        frame[y as usize * W + x as usize] = color;
+    }
+}
+
+fn fill_circle(frame: &mut [u16], cx: i32, cy: i32, r: i32, color: u16) {
+    let rr = r * r;
+    for y in (cy - r).max(0)..=(cy + r).min(H as i32 - 1) {
+        for x in (cx - r).max(0)..=(cx + r).min(W as i32 - 1) {
+            let dx = x - cx;
+            let dy = y - cy;
+            if dx * dx + dy * dy <= rr {
+                set_pixel(frame, x, y, color);
+            }
+        }
+    }
+}
+
+fn stroke_circle(frame: &mut [u16], cx: i32, cy: i32, r: i32, color: u16) {
+    let outer = r * r;
+    let inner = (r - 1) * (r - 1);
+    for y in (cy - r).max(0)..=(cy + r).min(H as i32 - 1) {
+        for x in (cx - r).max(0)..=(cx + r).min(W as i32 - 1) {
+            let dx = x - cx;
+            let dy = y - cy;
+            let d = dx * dx + dy * dy;
+            if d <= outer && d >= inner {
+                set_pixel(frame, x, y, color);
+            }
+        }
+    }
 }
 
 fn fill_rect(frame: &mut [u16], x: i32, y: i32, w: i32, h: i32, color: u16) {
@@ -668,21 +1037,19 @@ fn fill_rect(frame: &mut [u16], x: i32, y: i32, w: i32, h: i32, color: u16) {
     let y1 = (y + h).min(H as i32);
 
     for yy in y0..y1 {
-        let row = yy as usize * W;
-
         for xx in x0..x1 {
-            if inside_circle(xx, yy) {
-                frame[row + xx as usize] = color;
-            }
+            set_pixel(frame, xx, yy, color);
         }
     }
 }
 
-fn stroke_rect(frame: &mut [u16], x: i32, y: i32, w: i32, h: i32, color: u16) {
-    fill_rect(frame, x, y, w, 1, color);
-    fill_rect(frame, x, y + h - 1, w, 1, color);
-    fill_rect(frame, x, y, 1, h, color);
-    fill_rect(frame, x + w - 1, y, 1, h, color);
+fn text_width(text: &str, scale: i32) -> i32 {
+    text.chars().count() as i32 * 6 * scale
+}
+
+fn draw_text_centered(frame: &mut [u16], y: i32, text: &str, color: u16, scale: i32) {
+    let x = CX - text_width(text, scale) / 2;
+    draw_text(frame, x, y, text, color, scale);
 }
 
 fn draw_text(frame: &mut [u16], x: i32, y: i32, text: &str, color: u16, scale: i32) {
@@ -757,6 +1124,8 @@ fn glyph_5x7(ch: char) -> [u8; 7] {
         '%' => [0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03],
         ',' => [0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x08],
         '.' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C],
+        '<' => [0x01, 0x02, 0x04, 0x08, 0x04, 0x02, 0x01],
+        '>' => [0x10, 0x08, 0x04, 0x02, 0x04, 0x08, 0x10],
         ' ' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
         _ => [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
     }

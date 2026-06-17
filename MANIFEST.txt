@@ -1,21 +1,44 @@
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/APPLY_v0.1.2.md
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/MANIFEST.txt
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/docs/RELEASE_v0.1.2_RUST_ASSISTANT_APP_SHELL.md
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/.cargo/config.toml
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/Cargo.toml
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/build.rs
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/partitions.csv
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/sdkconfig.defaults
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/src/app/mod.rs
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/src/app/model.rs
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/src/app/pages.rs
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/firmware/assistant-rs/src/main.rs
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/scripts/build_assistant_rs.ps1
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/scripts/fix_assistant_partition_path.ps1
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/scripts/flash_assistant_rs.ps1
-ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.2-files/scripts/validate_rust_assistant_repo.ps1
+ESP32-S3-Touch-LCD-1.85C-Assistant v0.1.3-r12 files
 
+Replacement files:
+- firmware/assistant-rs/Cargo.toml
+- firmware/assistant-rs/.cargo/config.toml
+- firmware/assistant-rs/build.rs
+- firmware/assistant-rs/sdkconfig.defaults
+- firmware/assistant-rs/partitions.csv
+- firmware/assistant-rs/src/main.rs
+- firmware/assistant-rs/src/app/mod.rs
+- firmware/assistant-rs/src/app/model.rs
+- firmware/assistant-rs/src/app/pages.rs
+
+Helper scripts:
 - scripts/normalize_assistant_timestamps.ps1
-- scripts/build_assistant_rs.ps1 updated with -Clean and timestamp normalization
-- scripts/flash_assistant_rs.ps1 updated with -Clean and timestamp normalization
-- scripts/fix_assistant_partition_path.ps1 made idempotent
+- scripts/fix_assistant_partition_path.ps1
+- scripts/validate_rust_assistant_repo.ps1
+- scripts/build_assistant_rs.ps1
+- scripts/flash_assistant_rs.ps1
+
+Docs:
+- APPLY_v0.1.3-r12.md
+- docs/RELEASE_v0.1.3-r12_ACTIVE_CST816_POLLING_GESTURE_FIRST_NAVIGATION.md
+- docs/PROJECT_REFERENCES.md
+
+Scope:
+- Preserve accepted v0.1.2 hardware baseline
+- Keep r3a/r4a/r5/r6/r7/r8/r9/r10 UI display as acceptable
+- Do not accept r11 touch
+- Keep universal horizontal swipe from anywhere
+- Keep span-based swipe threshold at 20px
+- Keep center tap threshold at 12px
+- Use INT only to start a possible touch
+- Once touch starts, poll CST816 every 8ms regardless of INT state
+- Keep active polling for up to 180ms or until 3 consecutive no-touch reads
+- Classify after active polling window/no-touch finish
+- Gesture-first navigation with CST816 0x03 -> NextPage, 0x04 -> PreviousPage
+- Use span direction when gesture is 0
+- If gesture and span disagree, log both; prefer gesture only when span <35
+- Avoid render while active touch polling is in progress
+- Keep GPIO14/GPIO17/GPIO16 presence boot-only
+- No SD refresh while UI validation is running
+- Keep POWER GPIO6 experimental logging only
+- Keep BOOT reserved while USB monitor is attached

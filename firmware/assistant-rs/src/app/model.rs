@@ -4,23 +4,35 @@ use crate::{
     drivers::pcf85063::DateTime,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CardId {
-    Rtc,
-    Touch,
-    Flash,
-    Psram,
-    Battery,
-    Wifi,
-    Sd,
-    Backlight,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct TouchSnapshot {
     pub x: u16,
     pub y: u16,
     pub fingers: u8,
+    pub gesture: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonName {
+    Boot,
+    Power,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonPressKind {
+    Short,
+    Long,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiIntent {
+    NextPage,
+    PreviousPage,
+    Select,
+    BackHome,
+    AssistantHold,
+    PowerMenu,
+    BootReserved,
 }
 
 #[derive(Debug, Clone)]
@@ -28,7 +40,10 @@ pub struct OnboardModel {
     pub current_page: AssistantPage,
     pub rtc: Option<DateTime>,
     pub touch_events: u32,
+    pub button_events: u32,
+    pub nav_events: u32,
     pub last_touch: Option<TouchSnapshot>,
+    pub last_action: &'static str,
     pub battery_mv: Option<u16>,
     pub sd_present: bool,
     pub sd_capacity_mb: Option<u32>,
@@ -39,7 +54,6 @@ pub struct OnboardModel {
     pub i2c_ok: bool,
     pub touch_ready: bool,
     pub rtc_ready: bool,
-    pub selected: Option<CardId>,
 }
 
 impl OnboardModel {
@@ -48,7 +62,10 @@ impl OnboardModel {
             current_page: AssistantPage::Home,
             rtc: None,
             touch_events: 0,
+            button_events: 0,
+            nav_events: 0,
             last_touch: None,
+            last_action: "READY",
             battery_mv: None,
             sd_present: false,
             sd_capacity_mb: None,
@@ -59,12 +76,26 @@ impl OnboardModel {
             i2c_ok: false,
             touch_ready: false,
             rtc_ready: false,
-            selected: Some(CardId::Rtc),
         }
     }
 
     pub fn set_page(&mut self, page: AssistantPage) {
+        if self.current_page != page {
+            self.nav_events = self.nav_events.saturating_add(1);
+        }
         self.current_page = page;
+    }
+
+    pub fn next_page(&mut self) {
+        let next = self.current_page.next();
+        self.set_page(next);
+        self.last_action = "NEXT PAGE";
+    }
+
+    pub fn previous_page(&mut self) {
+        let previous = self.current_page.previous();
+        self.set_page(previous);
+        self.last_action = "PREV PAGE";
     }
 
     pub fn set_probe_status(&mut self, i2c_ok: bool, touch_ready: bool, rtc_ready: bool) {
@@ -78,12 +109,46 @@ impl OnboardModel {
         self.rtc_ready = true;
     }
 
-    pub fn note_touch(&mut self, x: u16, y: u16, fingers: u8) {
+    pub fn note_touch(&mut self, x: u16, y: u16, fingers: u8, gesture: u8) {
         self.touch_events = self.touch_events.saturating_add(1);
-        self.last_touch = Some(TouchSnapshot { x, y, fingers });
+        self.last_touch = Some(TouchSnapshot {
+            x,
+            y,
+            fingers,
+            gesture,
+        });
+    }
+
+    pub fn note_button(&mut self, button: ButtonName, kind: ButtonPressKind) {
+        self.button_events = self.button_events.saturating_add(1);
+        self.last_action = match (button, kind) {
+            (ButtonName::Boot, ButtonPressKind::Short) => "BOOT RSV",
+            (ButtonName::Boot, ButtonPressKind::Long) => "BOOT RSV",
+            (ButtonName::Power, ButtonPressKind::Short) => "POWER HOME",
+            (ButtonName::Power, ButtonPressKind::Long) => "POWER MENU",
+        };
+    }
+
+    pub fn note_intent(&mut self, intent: UiIntent) {
+        self.last_action = match intent {
+            UiIntent::NextPage => "NEXT PAGE",
+            UiIntent::PreviousPage => "PREV PAGE",
+            UiIntent::Select => "SELECT",
+            UiIntent::BackHome => "HOME",
+            UiIntent::AssistantHold => "ASSIST HOLD",
+            UiIntent::PowerMenu => "POWER MENU",
+            UiIntent::BootReserved => "BOOT RSV",
+        };
     }
 
     pub fn rtc_hms(&self) -> String {
+        match self.rtc {
+            Some(dt) => format!("{:02}:{:02}", dt.hour, dt.minute),
+            None => "--:--".to_string(),
+        }
+    }
+
+    pub fn rtc_hms_full(&self) -> String {
         match self.rtc {
             Some(dt) => format!("{:02}:{:02}:{:02}", dt.hour, dt.minute, dt.second),
             None => "--:--:--".to_string(),
@@ -99,6 +164,14 @@ impl OnboardModel {
 
     pub fn touch_count_text(&self) -> String {
         self.touch_events.to_string()
+    }
+
+    pub fn button_count_text(&self) -> String {
+        self.button_events.to_string()
+    }
+
+    pub fn nav_count_text(&self) -> String {
+        self.nav_events.to_string()
     }
 
     pub fn battery_text(&self) -> String {
