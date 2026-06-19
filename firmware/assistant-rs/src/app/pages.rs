@@ -3,13 +3,15 @@ pub enum AssistantPage {
     Home,
     Weather,
     Music,
+    Assistant,
     Settings,
 }
 
-pub const ALL_PAGES: [AssistantPage; 4] = [
+pub const ALL_PAGES: [AssistantPage; 5] = [
     AssistantPage::Home,
     AssistantPage::Weather,
     AssistantPage::Music,
+    AssistantPage::Assistant,
     AssistantPage::Settings,
 ];
 
@@ -19,6 +21,7 @@ impl AssistantPage {
             Self::Home => "HOME",
             Self::Weather => "WEATHER",
             Self::Music => "MUSIC",
+            Self::Assistant => "ASSISTANT",
             Self::Settings => "SETTINGS",
         }
     }
@@ -28,7 +31,8 @@ impl AssistantPage {
             Self::Home => 0,
             Self::Weather => 1,
             Self::Music => 2,
-            Self::Settings => 3,
+            Self::Assistant => 3,
+            Self::Settings => 4,
         }
     }
 

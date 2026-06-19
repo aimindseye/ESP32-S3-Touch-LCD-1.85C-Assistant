@@ -1,0 +1,5 @@
+# Copy this file to ../idf_component.yml only when intentionally enabling the real LVGL experiment.
+# The default v0.1.8 package uses a safe stub bridge so the accepted firmware keeps building.
+dependencies:
+  espressif/esp_lvgl_port: "*"
+  lvgl/lvgl: "*"

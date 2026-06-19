@@ -1,0 +1,66 @@
+{
+  "home_default_base": [
+    {
+      "field": "time",
+      "center": [
+        180,
+        146
+      ]
+    },
+    {
+      "field": "status",
+      "center": [
+        180,
+        256
+      ]
+    }
+  ],
+  "weather_base": [
+    {
+      "field": "icon/temp/condition/sample",
+      "centers": [
+        [
+          180,
+          92
+        ],
+        [
+          180,
+          146
+        ],
+        [
+          180,
+          205
+        ],
+        [
+          180,
+          303
+        ]
+      ]
+    }
+  ],
+  "music_paused_base": [
+    {
+      "field": "track",
+      "center": [
+        180,
+        238
+      ]
+    }
+  ],
+  "assistant_idle_base": [
+    {
+      "field": "state/prompt",
+      "centers": [
+        [
+          180,
+          212
+        ],
+        [
+          180,
+          238
+        ]
+      ]
+    }
+  ],
+  "weather_r7_note": "Weather base asset regenerated for larger hourly forecast chips and smaller main forecast emphasis."
+}

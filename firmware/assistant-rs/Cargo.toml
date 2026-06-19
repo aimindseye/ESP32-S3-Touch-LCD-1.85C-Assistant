@@ -1,6 +1,6 @@
 [package]
 name = "esp32-s3-touch-lcd-185c-assistant"
-version = "0.1.3"
+version = "0.1.14"
 edition = "2021"
 resolver = "2"
 
