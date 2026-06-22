@@ -1,64 +1,46 @@
-# Hardware Notes
+# Hardware
 
-Current accepted firmware: `v0.1.36-r56-r2`
+Target: Waveshare ESP32-S3-Touch-LCD-1.85C / 1.85C-BOX
 
-## Target board
+## Board details
 
-Project target: Waveshare ESP32-S3 Touch LCD 1.85C / 1.85C-BOX class hardware.
+- MCU: ESP32-S3R8
+- Flash: 16MB
+- PSRAM: 8MB
+- Display: ST77916 390x390 LCD
+- Touch: CST816 capacitive touch
+- RTC: PCF85063
+- Audio: PCM5101 I2S output path
+- Storage: TF / microSD card
+- Connectivity: Wi-Fi and Bluetooth LE
 
-The firmware has been validated on an ESP32-S3 device reporting:
+## Hardware limitations reflected in firmware design
 
-```text
-chip: ESP32-S3 rev v0.2
-flash: 16 MB
-PSRAM: 8 MB
-Wi-Fi: 2.4 GHz station mode used by firmware
-Bluetooth: BLE-only on ESP32-S3; no Bluetooth Classic / A2DP
-```
+The ESP32-S3 supports Bluetooth LE, but Bluetooth Classic/A2DP is not supported. A normal phone Bluetooth speaker requires Bluetooth Classic A2DP sink support, so this firmware does not implement direct phone Bluetooth speaker behavior.
 
-## Main components used by the firmware
+Recommended audio paths for this hardware are:
 
-```text
-MCU              ESP32-S3 / ESP32-S3R8 class
-Display          ST77916 round LCD, 390 x 390 firmware UI target
-Touch            CST816 capacitive touch controller
-RTC              PCF85063
-Audio output     PCM5101 I2S path in the accepted firmware baseline
-Storage          SD / TF card
-GPIO expander    TCA9554 family where present
-Battery source   C-SHIM GPIO8 VENDOR reporting path in accepted logs
-```
+- local WAV/MP3 playback from SD
+- Internet Radio over Wi-Fi
+- future Wi-Fi audio receiver endpoint
+- external Bluetooth Classic receiver module if true phone Bluetooth speaker behavior is required
 
-Some Waveshare variants document ES8311/ES7210 audio codec hardware. This firmware baseline uses the accepted PCM5101 I2S output path that has been physically validated in Music and Internet Radio tests.
+## Display and memory design
 
-## Design consequences
+The display path uses raw RGB565 rendering and SD-backed assets. This keeps the firmware small enough for the partition layout while preserving a responsive UI on the 390x390 display.
 
-### Display
+## Audio design
 
-The firmware uses raw RGB565 page bases plus lightweight dynamic overlays. This avoids pulling in large UI dependencies and keeps the app partition under control.
+The PCM5101 I2S output is shared by Music and Internet Radio. The accepted design serializes stop/start transitions to prevent overlapping ownership of the audio path.
 
-### Touch
+<!-- RAW-V1-0-0-HARDWARE -->
 
-Touch gestures/taps are centrally summarized and routed through feature-specific modules. This keeps page navigation independent from Weather, Settings, Music, and Internet Radio action handling.
+## Weather timezone configuration
 
-### Audio
+The accepted Weather configuration includes Mumbai as a selectable Weather location.
 
-The I2S output path is shared. MP3 decode and Internet Radio stream workers serialize stop/disable ownership so user stop/next/play actions do not race the audio thread.
+Mumbai uses the IANA timezone `Asia/Kolkata`. For the Open-Meteo request URL, this is encoded as `Asia%2FKolkata`.
 
-### SD card
+This timezone is intentionally documented as part of the hardware/release baseline because Weather fetch/cache behavior is validated on-device for Mumbai along with Jersey City, New York, and Edison.
 
-The SD card is part of the product architecture, not just a debug aid. It carries user media, radio station lists, Wi-Fi credentials import, battery calibration, optional assets, and debug/profile files.
-
-### Bluetooth
-
-ESP32-S3 Bluetooth is BLE-only. Standard phone Bluetooth speaker behavior requires Bluetooth Classic A2DP sink support, which this target does not provide. Use Wi-Fi audio/HTTP streaming for a software-only future receiver feature, or add external Bluetooth Classic hardware for true A2DP speaker behavior.
-
-## Time zones
-
-The Weather provider uses fixed configured locations. Mumbai is configured as:
-
-```text
-label: MUMBAI
-timezone: Asia/Kolkata
-Open-Meteo URL value: Asia%2FKolkata
-```
+<!-- RAW-V1-0-0-HARDWARE-ASIA-KOLKATA-TOKEN -->

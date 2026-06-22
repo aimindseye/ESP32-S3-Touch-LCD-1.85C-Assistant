@@ -148,8 +148,8 @@ if re.search(r'(?m)^\s*pub\s+video_[A-Za-z0-9_]+\s*:', model_t):
     fail("model.rs still exposes video_* fields")
 
 # Boot/report contract.
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "RAW-R50-NO-SCREEN-INCLUDES-BOOT" not in boot_t:
     fail("r50 boot marker missing")
@@ -290,8 +290,8 @@ if not re.search(r'(?m)^pub\(crate\)\s+fn\s+[A-Za-z0-9_]+\s*\(', orch_t):
 if not any(token in orch_t for token in ["AssistantPage::", "NextPage", "PreviousPage", "nav:", "settings-nav"]):
     fail("page_orchestration.rs does not contain page dispatch/navigation semantics")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "RAW-R51-MAIN-ORCHESTRATION-CLEANUP-BOOT" not in boot_t:
     fail("boot report missing r51 marker")
@@ -331,8 +331,8 @@ if "RAW-R51-R1-PAGE-ORCHESTRATION-AFTER-DEBUG-MACRO" not in main_t:
 if "crate::page_assets::draw_cached_page_base(" not in assistant_t:
     fail("assistant screen must call page_assets draw_cached_page_base")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 print("Main orchestration compile repair: OK")
 PY_R51_R1
@@ -395,8 +395,8 @@ if not any(token in touch_t for token in action_semantics):
 if "touch_router::" not in main_t and "touch_router::" not in orch_t:
     fail("touch_router callsites are not routed from main/page_orchestration")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "RAW-R52-TOUCH-HANDLER-CLEANUP-BOOT" not in boot_t:
     fail("boot report missing r52 marker")
@@ -447,8 +447,8 @@ if "page_orchestration::process_touch_summary(" in main_t:
 if "crate::settings_action_router::is_settings_detail_header_tap(" not in settings_t:
     fail("settings screen must route header tap helper through settings_action_router")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "RAW-R52-R1-TOUCH-ROUTER-CALLSITE-REPAIR-BOOT" not in boot_t:
     fail("boot report missing r52-r1 marker")
@@ -512,8 +512,8 @@ if "page_orchestration::draw_cached_page_base(" in main_t + orch_t + touch_t + a
 if "crate::page_assets::draw_cached_page_base(" not in main_t + orch_t + touch_t + assistant_t:
     fail("draw_cached_page_base callsites are not routed through page_assets")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "RAW-R53-PAGE-ASSETS-CLEANUP-BOOT" not in boot_t:
     fail("boot report missing r53 marker")
@@ -552,8 +552,8 @@ if "pub(crate) fn draw_cached_page_base" not in assets_t:
 if re.search(r'(?m)^(?:pub\(crate\)\s+)?fn\s+draw_cached_page_base\s*\(', orch_t):
     fail("draw_cached_page_base must not remain defined in page_orchestration")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 print("Page assets validator regex repair: OK")
 PY_R53_R1
@@ -610,8 +610,8 @@ if not any(token in media_t for token in ["RadioPlay", "RadioStop", "RadioNext",
 if "media_action_router::" not in touch_t + main_t:
     fail("media_action_router callsites are not routed from touch/main")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "RAW-R54-MEDIA-ACTION-CLEANUP-BOOT" not in boot_t:
     fail("boot report missing r54 marker")
@@ -676,8 +676,8 @@ if "settings_action_router::" not in touch_t + main_t + settings_screen_t:
 if "touch_router::is_settings_detail_header_tap(" in settings_screen_t:
     fail("settings screen still routes header tap helper through touch_router")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "RAW-R55-SETTINGS-ACTION-CLEANUP-BOOT" not in boot_t:
     fail("boot report missing r55 marker")
@@ -763,8 +763,8 @@ for token in ["< LOC", "LOC >", "model.weather.units.suffix()"]:
     if token not in screen_t:
         fail(f"Weather nav button token missing: {token}")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "RAW-R56-R1-WEATHER-ACTION-CLEANUP-BOOT" not in boot_t:
     fail("boot report missing r56-r1 marker")
@@ -802,8 +802,8 @@ touch_t = touch.read_text(errors="replace")
 router_t = router.read_text(errors="replace")
 screen_t = screen.read_text(errors="replace")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report version must be v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report version must be v1.0.0")
 
 if "WEATHER LOCATION" not in screen_t:
     fail("Weather screen must say WEATHER LOCATION, not CURRENT LOCATION")
@@ -838,7 +838,7 @@ def fail(msg):
 readme = root / "README.md"
 arch = root / "architecture.md"
 hw = root / "docs" / "HARDWARE.md"
-rel = root / "docs" / "RELEASE_v0.1.36-r56-r2.md"
+rel = root / "docs" / "RELEASE_v1.0.0.md"
 boot = src / "boot_report.rs"
 validate = root / "scripts" / "validate_assistant_current.sh"
 
@@ -853,7 +853,7 @@ rel_t = rel.read_text(errors="replace")
 boot_t = boot.read_text(errors="replace")
 validate_t = validate.read_text(errors="replace")
 
-for token in ["v0.1.36-r56-r2", "Weather Location", "Internet Radio", "Bluetooth Classic / A2DP"]:
+for token in ["v1.0.0", "Weather Location", "Internet Radio", "Bluetooth Classic / A2DP"]:
     if token not in readme_t:
         fail(f"README missing token: {token}")
 
@@ -865,10 +865,10 @@ for token in ["ESP32-S3R8", "ST77916", "CST816", "PCF85063", "PCM5101", "Asia/Ko
     if token not in hw_t:
         fail(f"HARDWARE.md missing token: {token}")
 
-if "firmware: v0.1.36-r56-r2" not in boot_t:
-    fail("boot report must remain v0.1.36-r56-r2")
+if "firmware: v1.0.0" not in boot_t:
+    fail("boot report must remain v1.0.0")
 
-if "v0.1.36-r56-r2" + "-r2" in validate_t:
+if "v1.0.0" + "-r2" in validate_t:
     fail("validator must not contain accidental duplicate r56-r2 suffix")
 
 if "RAW-R56-R2-RELEASE-NOTES" not in rel_t:
@@ -876,3 +876,61 @@ if "RAW-R56-R2-RELEASE-NOTES" not in rel_t:
 
 print("Release docs cleanup: OK")
 PY_RELEASE_DOCS
+
+
+# RAW-V1-0-0-RELEASE-VALIDATOR
+python3 - "$ROOT" "$SRC" <<'PY_V1_0_0'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+src = Path(sys.argv[2])
+
+def fail(msg):
+    print(f"CURRENT VALIDATION FAILED: {msg}", file=sys.stderr)
+    raise SystemExit(1)
+
+boot = src / "boot_report.rs"
+readme = root / "README.md"
+arch = root / "architecture.md"
+arch_caps = root / "ARCHITECTURE.md"
+hardware = root / "docs" / "HARDWARE.md"
+release = root / "docs" / "RELEASE_v1.0.0.md"
+package = root / "scripts" / "package_release.sh"
+
+for p in [boot, readme, arch, arch_caps, hardware, release, package]:
+    if not p.exists():
+        fail(f"missing v1.0.0 release file: {p.relative_to(root)}")
+
+boot_t = boot.read_text(errors="replace")
+readme_t = readme.read_text(errors="replace")
+arch_t = arch.read_text(errors="replace")
+hardware_t = hardware.read_text(errors="replace")
+release_t = release.read_text(errors="replace")
+package_t = package.read_text(errors="replace")
+
+if "firmware: v1.0.0 current=" not in boot_t:
+    fail("boot report version must be v1.0.0")
+
+if "Hardware-driven architecture" not in arch_t:
+    fail("architecture.md missing token: Hardware-driven architecture")
+
+for token in [
+    "ESP32-S3",
+    "Bluetooth LE",
+    "Bluetooth Classic/A2DP is not supported",
+    "PCM5101",
+    "ST77916",
+    "CST816",
+]:
+    if token not in hardware_t and token not in arch_t and token not in readme_t:
+        fail(f"hardware/design documentation missing token: {token}")
+
+if "v1.0.0" not in release_t:
+    fail("v1.0.0 release notes missing release version")
+
+if "v1.0.0" not in package_t:
+    fail("package_release.sh must package v1.0.0")
+
+print("v1.0.0 release promotion: OK")
+PY_V1_0_0

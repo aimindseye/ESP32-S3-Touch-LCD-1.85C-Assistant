@@ -1,5 +1,31 @@
 # Release Checklist
 
+## v1.0.0
+
+Before tagging:
+
+```bash
+./scripts/validate_assistant_current.sh
+
+cd firmware/assistant-rs
+cargo build --release
+cd ../..
+
+./scripts/package_release.sh
+```
+
+Expected source package:
+
+```text
+dist/ESP32-S3-Touch-LCD-1.85C-Assistant-v1.0.0-source.zip
+```
+
+Flash only after validation and build succeed.
+
+<!-- RAW-V1-0-0-RELEASE-CHECKLIST -->
+
+# Release Checklist
+
 Current accepted firmware: `v0.1.36-r56-r2`
 
 ```bash

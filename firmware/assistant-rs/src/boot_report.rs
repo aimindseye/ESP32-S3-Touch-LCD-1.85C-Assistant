@@ -30,7 +30,7 @@ pub(crate) fn log_current_startup(
     _volume_percent: u8,
 ) {
     println!("\n=== {} ===", board_name);
-    println!("firmware: v0.1.36-r56-r2 current=radio_names,media_touch_zones,music_radio_layout,ui_draw,boot_log_cleanup,media_base_cleanup,startup_order_cleanup,video_dead_source_cleanup,source_validator_stabilization,screen_renderer_source_split,home_true_module,weather_true_module,music_true_module,assistant_true_module,settings_true_module,no_screen_includes,main_orchestration_cleanup,touch_handler_cleanup,page_assets_cleanup,media_action_cleanup,settings_action_cleanup,weather_action_cleanup,weather_nav_buttons,weather_nav_row_touch");
+    println!("firmware: v1.0.0 current=radio_names,media_touch_zones,music_radio_layout,ui_draw,boot_log_cleanup,media_base_cleanup,startup_order_cleanup,video_dead_source_cleanup,source_validator_stabilization,screen_renderer_source_split,home_true_module,weather_true_module,music_true_module,assistant_true_module,settings_true_module,no_screen_includes,main_orchestration_cleanup,touch_handler_cleanup,page_assets_cleanup,media_action_cleanup,settings_action_cleanup,weather_action_cleanup,weather_nav_buttons,weather_nav_row_touch");
     println!(
         "runtime: profile={} source={} debug=false sleep=software+idle wake=touch-int",
         profile, profile_source
@@ -93,3 +93,5 @@ pub(crate) fn log_current_startup(
 // RAW-R56-R1-WEATHER-ACTION-CLEANUP-BOOT
 
 // RAW-R56-R2-WEATHER-NAV-ROW-LABEL-REPAIR-BOOT
+
+// RAW-V1-0-0-RELEASE-PROMOTION-BOOT

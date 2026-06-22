@@ -1,5 +1,67 @@
 # Architecture
 
+Current stable release: `v1.0.0`
+
+## Hardware-driven architecture
+
+The firmware architecture is intentionally shaped by the Waveshare ESP32-S3-Touch-LCD-1.85C hardware.
+
+The ESP32-S3 target provides Wi-Fi and Bluetooth LE, but Bluetooth Classic/A2DP is not supported. For this reason, the design does not treat the device as a standard phone Bluetooth speaker. Music playback, Internet Radio, SD-backed assets, and future phone-to-device audio features should use Wi-Fi, SD card storage, HTTP endpoints, or an external Bluetooth Classic audio receiver module.
+
+The 390x390 ST77916 display, CST816 touch controller, SD card, PCM5101 I2S audio path, PCF85063 RTC, 16MB flash, and 8MB PSRAM drive the current architecture:
+
+- raw RGB565 rendering instead of a heavy graphics stack
+- SD-backed assets, audio, configuration, and cache files
+- serialized MP3 and Internet Radio stop/start ownership around the shared PCM5101 I2S output
+- focused modules for screens, page assets, page orchestration, touch routing, media actions, settings actions, and weather actions
+- no Video page or Video worker in the accepted release baseline
+
+## Runtime page model
+
+The current release page order is:
+
+```text
+Home -> Weather -> Music -> InternetRadio -> Assistant -> Settings -> Home
+```
+
+The accepted screen modules are:
+
+```text
+screens::home
+screens::weather
+screens::music
+screens::assistant
+screens::settings
+screens::internet_radio
+```
+
+## Routing modules
+
+Current routing and orchestration modules:
+
+- `page_assets.rs` owns cached page-base helpers
+- `page_orchestration.rs` owns page draw/transition orchestration
+- `touch_router.rs` owns general touch summary routing
+- `media_action_router.rs` owns Music and Internet Radio action routing
+- `settings_action_router.rs` owns Settings-specific action routing
+- `weather_action_router.rs` owns Weather location/unit action routing
+
+## Audio ownership
+
+Music MP3/WAV playback and Internet Radio use the same PCM5101 I2S output path. The firmware preserves stop serialization before switching streams or pages so accepted local playback and radio playback remain stable.
+
+## Weather design
+
+Weather uses configured locations and Open-Meteo fetch/cache behavior. Mumbai remains configured with IANA timezone `Asia/Kolkata`, URL-encoded as `Asia%2FKolkata`.
+
+<!-- RAW-V1-0-0-ARCHITECTURE -->
+
+---
+
+## Historical architecture notes
+
+# Architecture
+
 
 ## Hardware-driven architecture
 
@@ -19,7 +81,7 @@ The 390x390 ST77916 display, CST816 touch controller, SD card, PCM5101 I2S audio
 
 This file mirrors the current top-level architecture summary. See [`architecture.md`](architecture.md) for the maintained architecture document.
 
-Current accepted firmware: `v0.1.36-r56-r2`.
+Current accepted firmware: `v1.0.0`.
 
 Key modules:
 
@@ -41,4 +103,4 @@ Important hardware constraints:
 - SD card is used for assets, audio files, radio station list, and calibration/config files.
 - PCM5101 I2S output path is shared by Music and Internet Radio and must remain serialized.
 
-See [`docs/HARDWARE.md`](docs/HARDWARE.md) and [`docs/RELEASE_v0.1.36-r56-r2.md`](docs/RELEASE_v0.1.36-r56-r2.md).
+See [`docs/HARDWARE.md`](docs/HARDWARE.md) and [`docs/RELEASE_v1.0.0.md`](docs/RELEASE_v1.0.0.md).

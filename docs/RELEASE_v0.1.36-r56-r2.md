@@ -80,3 +80,10 @@ The 390x390 ST77916 display, CST816 touch controller, SD card, PCM5101 I2S audio
 - no Video page or Video worker in the accepted release baseline
 
 <!-- RAW-R56-R2-HARDWARE-DRIVEN-ARCHITECTURE-TOKEN -->
+
+## Superseded by v1.0.0
+
+This release note is retained as the engineering checkpoint that was promoted to v1.0.0.
+
+<!-- RAW-R56-R2-RELEASE-NOTES -->
+<!-- RAW-R56-R2-RELEASE-DOCS-CLEANUP -->

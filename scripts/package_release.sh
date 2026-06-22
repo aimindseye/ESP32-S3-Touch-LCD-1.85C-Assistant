@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="v0.1.36-r56-r2"
+VERSION="v1.0.0"
 OUTDIR="dist"
 OUT="$OUTDIR/ESP32-S3-Touch-LCD-1.85C-Assistant-${VERSION}-source.zip"
 mkdir -p "$OUTDIR"
@@ -15,7 +15,7 @@ from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
 root = Path.cwd()
-version = "v0.1.36-r56-r2"
+version = "v1.0.0"
 out = root / "dist" / f"ESP32-S3-Touch-LCD-1.85C-Assistant-{version}-source.zip"
 
 exclude_dirs = {
@@ -51,3 +51,5 @@ print(out)
 PY
 
 ls -lh "$OUT"
+
+# RAW-V1-0-0-PACKAGE-SCRIPT

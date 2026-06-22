@@ -20,3 +20,4 @@ firmware/assistant-rs/src/touch_router.rs
 firmware/assistant-rs/src/media_action_router.rs
 firmware/assistant-rs/src/settings_action_router.rs
 firmware/assistant-rs/src/weather_action_router.rs
+release=v1.0.0
