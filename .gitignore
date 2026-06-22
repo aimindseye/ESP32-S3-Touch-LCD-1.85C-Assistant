@@ -32,3 +32,6 @@ scripts/_archive_*/
 *.bak.*
 *.orig
 *.tmp
+
+# local monitor logs
+monitor.log

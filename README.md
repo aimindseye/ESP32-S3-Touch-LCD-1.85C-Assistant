@@ -1,5 +1,30 @@
 # ESP32-S3 Touch LCD 1.85C Assistant
 
+
+## User guide and screenshots
+
+The v1.0.0 user guide is available in [`userguide.md`](userguide.md).
+
+It includes screen-by-screen usage notes and screenshots for:
+
+- Home
+- Weather
+- Music
+- Internet Radio
+- Assistant
+- Settings
+- Network
+- Time
+- Display
+- Sound
+- Storage
+- Device
+- Diagnostics
+
+Screenshots are stored under [`docs/screenshots/`](docs/screenshots/).
+
+<!-- RAW-V1-0-0-README-USERGUIDE-LINK -->
+
 Current stable release: `v1.0.0`
 
 This project is a Rust firmware application for the Waveshare ESP32-S3-Touch-LCD-1.85C / 1.85C-BOX. It provides a compact touch assistant UI with Home, Weather, Music, Internet Radio, Assistant, and Settings pages.
