@@ -1,10 +1,16 @@
-use crate::app::{model::OnboardModel, pages::AssistantPage};
+use crate::app::{
+    pages::AssistantPage, providers::LocalProviders, settings::SettingsPanel, state::AppState,
+};
+use crate::internet_radio;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppAction {
     HomeStatus,
     WeatherRefresh,
+    WeatherLocation,
+    WeatherUnits,
     MusicTogglePlayPause,
+    InternetRadioToggle,
     AssistantListenToggle,
     SettingsEnter,
     SettingsToggle,
@@ -15,7 +21,10 @@ impl AppAction {
         match self {
             Self::HomeStatus => "action: HomeStatus",
             Self::WeatherRefresh => "action: WeatherRefresh",
+            Self::WeatherLocation => "action: WeatherLocation",
+            Self::WeatherUnits => "action: WeatherUnits",
             Self::MusicTogglePlayPause => "action: MusicTogglePlayPause",
+            Self::InternetRadioToggle => "action: InternetRadioToggle",
             Self::AssistantListenToggle => "action: AssistantListenToggle",
             Self::SettingsEnter => "action: SettingsEnter",
             Self::SettingsToggle => "action: SettingsToggle",
@@ -24,41 +33,73 @@ impl AppAction {
 
     pub const fn status_label(self) -> &'static str {
         match self {
-            Self::HomeStatus => "HOME STATUS",
-            Self::WeatherRefresh => "WEATHER MOCK",
+            Self::HomeStatus => "HOME REFRESH",
+            Self::WeatherRefresh => "WEATHER FETCH",
+            Self::WeatherLocation => "WX LOCATION",
+            Self::WeatherUnits => "WX UNITS",
             Self::MusicTogglePlayPause => "MUSIC TOGGLE",
+            Self::InternetRadioToggle => "RADIO TOGGLE",
             Self::AssistantListenToggle => "ASSISTANT",
             Self::SettingsEnter => "SETTINGS OPEN",
-            Self::SettingsToggle => "SETTINGS TOGGLE",
+            Self::SettingsToggle => "SETTINGS APPLY",
         }
     }
 }
 
-pub fn handle_select_action(model: &mut OnboardModel) -> AppAction {
+pub fn handle_select_action(model: &mut AppState, providers: &LocalProviders) -> AppAction {
     let action = match model.current_page {
         AssistantPage::Home => {
-            model.home.toggle_status_detail();
+            providers.toggle_home_status(&mut model.home);
+            providers.refresh_weather(&mut model.weather);
             AppAction::HomeStatus
         }
         AssistantPage::Weather => {
-            model.weather.refresh_mock();
-            AppAction::WeatherRefresh
+            let y = model.last_touch.map(|touch| touch.y).unwrap_or(180);
+            // v0.1.21-r2: center/body tap is the location editor action.
+            // Changing location auto-fetches immediately in main.rs so the
+            // screen does not get stuck on a cached city.
+            if y >= 300 {
+                providers.toggle_weather_units(&mut model.weather);
+                AppAction::WeatherUnits
+            } else {
+                providers.cycle_weather_location(&mut model.weather);
+                AppAction::WeatherLocation
+            }
         }
         AssistantPage::Music => {
-            model.music.toggle_play_pause();
+            providers.toggle_music_play_pause(&mut model.music);
             AppAction::MusicTogglePlayPause
         }
+        AssistantPage::InternetRadio => {
+            let _ = internet_radio::toggle_play_stop();
+            AppAction::InternetRadioToggle
+        }
         AssistantPage::Assistant => {
-            model.assistant.toggle_listening();
+            providers.toggle_assistant_listening(&mut model.assistant);
             AppAction::AssistantListenToggle
         }
         AssistantPage::Settings => {
             if model.settings.detail_open {
-                model.settings.toggle_current();
+                match model.settings.selected {
+                    SettingsPanel::Weather => {
+                        providers.cycle_weather_location(&mut model.weather);
+                        providers.refresh_weather(&mut model.weather);
+                    }
+                    _ => {
+                        providers.toggle_settings_current(&mut model.settings);
+                    }
+                }
                 AppAction::SettingsToggle
             } else {
-                model.settings.enter_detail();
-                AppAction::SettingsEnter
+                let touch_y = model.last_touch.map(|touch| touch.y).unwrap_or(180);
+                if model.settings.is_overview_page_tap(touch_y) {
+                    providers.next_settings_overview_page(&mut model.settings);
+                    AppAction::SettingsToggle
+                } else {
+                    let selected = model.settings.panel_for_touch_y(touch_y);
+                    providers.enter_settings_detail(&mut model.settings, selected);
+                    AppAction::SettingsEnter
+                }
             }
         }
     };
@@ -67,14 +108,33 @@ pub fn handle_select_action(model: &mut OnboardModel) -> AppAction {
 
     match action {
         AppAction::HomeStatus => {
-            println!("screen: HomeStatus {}", model.home.detail_label());
+            println!(
+                "screen: HomeRefresh weather status={} location={}",
+                model.weather.status_label(),
+                model.weather.location_label()
+            );
         }
         AppAction::WeatherRefresh => {
             println!(
-                "screen: WeatherRefresh sample={} temp={} condition={}",
+                "screen: WeatherRefresh attempt={} temp={} condition={} status={}",
                 model.weather.refresh_attempts,
-                model.weather.temperature_label,
-                model.weather.condition_label
+                model.weather.temperature_label(),
+                model.weather.condition_label(),
+                model.weather.status_label()
+            );
+        }
+        AppAction::WeatherLocation => {
+            println!(
+                "screen: WeatherLocation location={} units={}",
+                model.weather.location_label(),
+                model.weather.units.suffix()
+            );
+        }
+        AppAction::WeatherUnits => {
+            println!(
+                "screen: WeatherUnits location={} units={}",
+                model.weather.location_label(),
+                model.weather.units.suffix()
             );
         }
         AppAction::MusicTogglePlayPause => {
@@ -84,6 +144,9 @@ pub fn handle_select_action(model: &mut OnboardModel) -> AppAction {
                 model.music.track_label
             );
         }
+        AppAction::InternetRadioToggle => {
+            println!("screen: InternetRadioToggle action=SELECT route=HTTP_MP3 audio=PCM5101_I2S");
+        }
         AppAction::AssistantListenToggle => {
             println!(
                 "screen: AssistantListenToggle state={} toggles={}",
@@ -92,15 +155,30 @@ pub fn handle_select_action(model: &mut OnboardModel) -> AppAction {
             );
         }
         AppAction::SettingsEnter => {
-            println!("screen: SettingsEnter detail=open");
+            println!(
+                "screen: SettingsEnter detail={}",
+                model.settings.current_panel_label()
+            );
         }
         AppAction::SettingsToggle => {
-            println!(
-                "screen: SettingsToggle {}",
-                model.settings.quiet_render_label()
-            );
+            if model.settings.detail_open {
+                println!(
+                    "screen: SettingsToggle detail={} value={}",
+                    model.settings.current_panel_label(),
+                    model.settings.current_value_label()
+                );
+            } else {
+                println!(
+                    "screen: SettingsPage page={}",
+                    model.settings.overview_page_label()
+                );
+            }
         }
     }
 
     action
 }
+
+// RAW-R42-VIDEO-ACTION-REMOVED
+
+// RAW-R42-R1-VIDEO-ACTION-CALLSITE-REMOVED

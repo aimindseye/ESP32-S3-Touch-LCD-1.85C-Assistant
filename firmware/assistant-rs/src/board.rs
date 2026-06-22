@@ -1,10 +1,20 @@
 pub const BOARD_NAME: &str = "Waveshare ESP32-S3-Touch-LCD-1.85C / 1.85C-BOX";
+pub const BOARD_PROFILE_V1_SCHEMATIC: &str = "WAVESHARE_ESP32_S3_TOUCH_LCD_1_85C_V1";
+pub const BATTERY_ADC_SCHEMATIC_LABEL: &str = "BAT_ADC(GPIO8)";
+pub const BATTERY_ADC_CONFIRMED_TEXT: &str = "GPIO8 CONFIRMED";
+pub const BATTERY_ADC_MISSING_TEXT: &str = "SIGNAL MISSING";
+pub const BATTERY_ADC_PATH_TEXT: &str = "BAT ADC GPIO8";
+pub const BATTERY_SOURCE_UNAVAILABLE: &str = "UNAVAILABLE";
+pub const BATTERY_SOURCE_C_SHIM_VENDOR: &str = "C-SHIM GPIO8 VENDOR";
+pub const BATTERY_SOURCE_RUST_DIAG: &str = "RUST GPIO8 DIAG";
+pub const BATTERY_VENDOR_ATTEN_TEXT: &str = "ADC_ATTEN_DB_12";
 
 // Vendor demo board map extracted from the uploaded Arduino and ESP-IDF trees.
 pub const I2C_SCL_GPIO: u8 = 10;
 pub const I2C_SDA_GPIO: u8 = 11;
 pub const TOUCH_INT_GPIO: u8 = 4;
 pub const BACKLIGHT_GPIO: u8 = 5;
+pub const POWER_BUTTON_GPIO: u8 = 6;
 pub const BATTERY_ADC_GPIO: u8 = 8;
 
 pub const SD_CLK_GPIO: u8 = 14;
@@ -37,8 +47,11 @@ pub const PCF85063_ADDR: u8 = 0x51;
 
 // TCA9554 bit positions (0-based in this Rust port).
 pub const EXIO_TOUCH_RST: u8 = 0; // Vendor EXIO1
-pub const EXIO_LCD_RST: u8 = 1;   // Vendor EXIO2
-pub const EXIO_SD_CS: u8 = 2;     // Vendor EXIO3 if needed for SPI-only fallbacks
+pub const EXIO_LCD_RST: u8 = 1; // Vendor EXIO2
+pub const EXIO_SD_CS: u8 = 2; // Vendor EXIO3 if needed for SPI-only fallbacks
+pub const EXIO_SAFE_OUTPUT_MASK: u8 = 0x07; // Preserve EXIO0..2 outputs: touch reset, LCD reset, SD CS
+pub const EXIO_DISCOVERY_INPUT_MASK: u8 = 0xF8; // Probe EXIO3..7 as inputs only
+pub const EXIO_DISCOVERY_CONFIG: u8 = 0xF8; // TCA9554 config bit: 1=input, 0=output
 
 // ST77916 / vendor display profile.
 pub const LCD_WIDTH: u16 = 360;
@@ -57,7 +70,8 @@ pub const BACKLIGHT_PWM_HZ: u32 = 5_000;
 pub const BACKLIGHT_PWM_BITS: u8 = 13;
 pub const BACKLIGHT_PWM_MAX_DUTY: u16 = (1 << BACKLIGHT_PWM_BITS) - 1;
 
-// BAT_Driver.h / BAT_Driver.c
+// Vendor ESP-IDF BAT_Driver.c Measurement_offset=0.994500.
+// Battery voltage = calibrated_adc_mv * 3.0 / Measurement_offset.
 pub const BATTERY_DIVIDER_SCALE: f32 = 3.0;
 pub const BATTERY_MEASUREMENT_OFFSET: f32 = 0.9945;
 

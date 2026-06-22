@@ -12,16 +12,14 @@ impl HomeState {
         }
     }
 
-    pub fn toggle_status_detail(&mut self) {
-        self.status_detail_open = !self.status_detail_open;
+    pub fn refresh_glance(&mut self) {
+        // v0.1.22: Home is glance-only. Center tap requests a data refresh
+        // and does not open a Home detail mode.
+        self.status_detail_open = false;
         self.select_count = self.select_count.saturating_add(1);
     }
 
     pub const fn detail_label(&self) -> &'static str {
-        if self.status_detail_open {
-            "DETAIL ON"
-        } else {
-            "DETAIL OFF"
-        }
+        "GLANCE"
     }
 }

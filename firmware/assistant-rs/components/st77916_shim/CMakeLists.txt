@@ -4,9 +4,12 @@ idf_component_register(
         "esp_lcd_st77916.c"
     INCLUDE_DIRS
         "include"
-    REQUIRES
+    REQUIRES esp_timer
         driver
         esp_lcd
         fatfs
         sdmmc
+        esp_http_client
+        esp_adc
+        esp_jpeg
 )

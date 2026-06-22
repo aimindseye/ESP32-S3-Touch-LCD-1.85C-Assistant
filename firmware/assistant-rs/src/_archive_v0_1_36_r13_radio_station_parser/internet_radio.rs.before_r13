@@ -1,0 +1,361 @@
+//! v0.1.36 Internet Radio HTTP MP3 Stream Foundation.
+//!
+//! Separate Internet Radio screen.
+//! Direct HTTP MP3 streams only.
+//! Station list source: /sdcard/AUDIO/RADIO.TXT
+//! This module preserves the accepted local Music player path.
+
+use std::ffi::CString;
+use std::fs;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::thread;
+
+use crate::ffi;
+
+const RADIO_LIST_PATH: &str = "/sdcard/AUDIO/RADIO.TXT";
+const RADIO_THREAD_STACK_BYTES: usize = 32 * 1024;
+
+static RADIO_SELECTED_INDEX: AtomicU32 = AtomicU32::new(0);
+static RADIO_PLAYING: AtomicBool = AtomicBool::new(false);
+static RADIO_THREAD_ACTIVE: AtomicBool = AtomicBool::new(false);
+static RADIO_PROGRESS_SEQUENCE: AtomicU32 = AtomicU32::new(0);
+static RADIO_VOLUME_PERCENT: AtomicU32 = AtomicU32::new(60);
+
+#[derive(Clone)]
+pub struct RadioStation {
+    pub name: String,
+    pub url: String,
+}
+
+pub struct RadioScreenSnapshot {
+    pub station_label: String,
+    pub status_label: String,
+    pub source_label: String,
+    pub playing: bool,
+    pub progress_percent: u8,
+    pub elapsed_label: String,
+    pub duration_label: String,
+}
+
+pub fn log_radio_boot() {
+    println!(
+        "radio-r36: foundation=ENABLED screen=InternetRadio source=/AUDIO/RADIO.TXT formats=HTTP_MP3 decoder=HELIX_FIXED_POINT output=PCM5101_I2S audio=PCM5101_I2S"
+    );
+
+    let stations = stations();
+    println!(
+        "radio-r36: station_list status={} path=/AUDIO/RADIO.TXT stations={} selected={} audio=PCM5101_I2S",
+        if stations.is_empty() { "EMPTY_OR_MISSING" } else { "READY" },
+        stations.len(),
+        selected_index(stations.len().max(1))
+    );
+}
+
+pub fn set_volume_percent(percent: u8) {
+    let clamped = percent.min(100);
+    RADIO_VOLUME_PERCENT.store(clamped as u32, Ordering::SeqCst);
+    unsafe { ffi::st77916_radio_http_mp3_set_volume(clamped as u32); }
+    RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+    println!(
+        "radio-r36: volume={} source=InternetRadio route=PCM5101_I2S audio=PCM5101_I2S",
+        clamped
+    );
+}
+
+pub fn volume_percent() -> u8 {
+    RADIO_VOLUME_PERCENT.load(Ordering::SeqCst).min(100) as u8
+}
+
+pub fn progress_sequence() -> u32 {
+    RADIO_PROGRESS_SEQUENCE.load(Ordering::SeqCst)
+}
+
+pub fn progress_active() -> bool {
+    RADIO_PLAYING.load(Ordering::SeqCst) || RADIO_THREAD_ACTIVE.load(Ordering::SeqCst)
+}
+
+pub fn snapshot() -> RadioScreenSnapshot {
+    let stations = stations();
+    if stations.is_empty() {
+        RADIO_PLAYING.store(false, Ordering::SeqCst);
+        return RadioScreenSnapshot {
+            station_label: "NO STATIONS".to_string(),
+            status_label: "Create /AUDIO/RADIO.TXT".to_string(),
+            source_label: "HTTP MP3 only".to_string(),
+            playing: false,
+            progress_percent: 0,
+            elapsed_label: "LIVE".to_string(),
+            duration_label: "--".to_string(),
+        };
+    }
+
+    let idx = selected_index(stations.len());
+    let station = &stations[idx];
+
+    let playing = RADIO_PLAYING.load(Ordering::SeqCst);
+    let elapsed = unsafe { ffi::st77916_radio_http_mp3_elapsed_seconds() };
+    let buffered = unsafe { ffi::st77916_radio_http_mp3_buffered_bytes() };
+    let status_code = unsafe { ffi::st77916_radio_http_mp3_status_code() };
+
+    let status = if playing {
+        match status_code {
+            1 => "CONNECTING",
+            2 => "BUFFERING",
+            3 => "PLAYING",
+            4 => "STOPPING",
+            5 => "STOPPED",
+            6 => "ERROR",
+            _ => "LIVE",
+        }
+    } else {
+        "STOPPED"
+    };
+
+    RadioScreenSnapshot {
+        station_label: trim_label(&station.name, 18),
+        status_label: format!("{} BUF {}KB", status, buffered / 1024),
+        source_label: format!("RADIO {}/{} VOL {}%", idx + 1, stations.len(), volume_percent()),
+        playing,
+        progress_percent: ((elapsed % 60) * 100 / 60).min(100) as u8,
+        elapsed_label: seconds_to_hhmmss(elapsed),
+        duration_label: "LIVE".to_string(),
+    }
+}
+
+pub fn toggle_play_stop() -> &'static str {
+    let stations = stations();
+    if stations.is_empty() {
+        RADIO_PLAYING.store(false, Ordering::SeqCst);
+        println!("radio-r36: action=PLAY status=NO_STATIONS path=/AUDIO/RADIO.TXT audio=PCM5101_I2S");
+        return "RadioNoStations";
+    }
+
+    let idx = selected_index(stations.len());
+    let station = stations[idx].clone();
+
+    if RADIO_PLAYING.load(Ordering::SeqCst) || RADIO_THREAD_ACTIVE.load(Ordering::SeqCst) {
+        stop_stream("user-stop");
+        println!(
+            "radio-r36: action=STOP station={} playback=STOPPED audio=PCM5101_I2S",
+            station.name
+        );
+        "RadioStop"
+    } else {
+        match start_stream(station.clone()) {
+            Ok(()) => {
+                println!(
+                    "radio-r36: action=PLAY station={} url={} playback=HTTP_MP3_STREAM audio=PCM5101_I2S",
+                    station.name,
+                    station.url
+                );
+                "RadioPlay"
+            }
+            Err(reason) => {
+                RADIO_PLAYING.store(false, Ordering::SeqCst);
+                RADIO_THREAD_ACTIVE.store(false, Ordering::SeqCst);
+                println!(
+                    "radio-r36: action=PLAY station={} status=FAILED reason={} audio=PCM5101_I2S",
+                    station.name,
+                    reason
+                );
+                "RadioError"
+            }
+        }
+    }
+}
+
+pub fn next_station() -> &'static str {
+    stop_stream("next");
+    let stations = stations();
+    if stations.is_empty() {
+        println!("radio-r36: action=NEXT status=NO_STATIONS path=/AUDIO/RADIO.TXT audio=PCM5101_I2S");
+        return "RadioNoStations";
+    }
+    let next = (selected_index(stations.len()) + 1) % stations.len();
+    RADIO_SELECTED_INDEX.store(next as u32, Ordering::SeqCst);
+    RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+    println!(
+        "radio-r36: action=NEXT selected={} station={} playback=STOPPED audio=PCM5101_I2S",
+        next,
+        stations[next].name
+    );
+    "RadioNext"
+}
+
+pub fn previous_station() -> &'static str {
+    stop_stream("prev");
+    let stations = stations();
+    if stations.is_empty() {
+        println!("radio-r36: action=PREV status=NO_STATIONS path=/AUDIO/RADIO.TXT audio=PCM5101_I2S");
+        return "RadioNoStations";
+    }
+    let current = selected_index(stations.len());
+    let prev = if current == 0 { stations.len() - 1 } else { current - 1 };
+    RADIO_SELECTED_INDEX.store(prev as u32, Ordering::SeqCst);
+    RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+    println!(
+        "radio-r36: action=PREV selected={} station={} playback=STOPPED audio=PCM5101_I2S",
+        prev,
+        stations[prev].name
+    );
+    "RadioPrev"
+}
+
+pub fn volume_down() -> &'static str {
+    let next = volume_percent().saturating_sub(5);
+    set_volume_percent(next);
+    println!(
+        "radio-r36: action=VOL_DOWN volume={} source=InternetRadio audio=PCM5101_I2S",
+        next
+    );
+    "RadioVolDown"
+}
+
+pub fn volume_up() -> &'static str {
+    let next = volume_percent().saturating_add(5).min(100);
+    set_volume_percent(next);
+    println!(
+        "radio-r36: action=VOL_UP volume={} source=InternetRadio audio=PCM5101_I2S",
+        next
+    );
+    "RadioVolUp"
+}
+
+fn start_stream(station: RadioStation) -> Result<(), &'static str> {
+    if !station.url.starts_with("http://") {
+        return Err("ONLY_HTTP_MP3_STREAMS_SUPPORTED");
+    }
+
+    if RADIO_THREAD_ACTIVE
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("RADIO_BUSY");
+    }
+
+    RADIO_PLAYING.store(true, Ordering::SeqCst);
+    RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+
+    let thread_name = format!("radio-{}", trim_label(&station.name, 12));
+    let result = thread::Builder::new()
+        .name(thread_name)
+        .stack_size(RADIO_THREAD_STACK_BYTES)
+        .spawn(move || radio_thread(station));
+
+    match result {
+        Ok(_handle) => Ok(()),
+        Err(_) => {
+            RADIO_PLAYING.store(false, Ordering::SeqCst);
+            RADIO_THREAD_ACTIVE.store(false, Ordering::SeqCst);
+            Err("RADIO_THREAD_SPAWN_FAILED")
+        }
+    }
+}
+
+fn radio_thread(station: RadioStation) {
+    println!(
+        "radio-r36: status=THREAD_STARTED station={} stack_bytes={} audio=PCM5101_I2S",
+        station.name,
+        RADIO_THREAD_STACK_BYTES
+    );
+
+    let c_url = match CString::new(station.url.as_bytes()) {
+        Ok(value) => value,
+        Err(_) => {
+            println!("radio-r36: status=BAD_URL station={} audio=PCM5101_I2S", station.name);
+            RADIO_PLAYING.store(false, Ordering::SeqCst);
+            RADIO_THREAD_ACTIVE.store(false, Ordering::SeqCst);
+            return;
+        }
+    };
+
+    let c_name = match CString::new(station.name.as_bytes()) {
+        Ok(value) => value,
+        Err(_) => CString::new("RADIO").unwrap(),
+    };
+
+    let code = unsafe {
+        ffi::st77916_radio_http_mp3_play(c_url.as_ptr(), c_name.as_ptr(), volume_percent() as u32)
+    };
+
+    RADIO_PLAYING.store(false, Ordering::SeqCst);
+    RADIO_THREAD_ACTIVE.store(false, Ordering::SeqCst);
+    RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+
+    println!(
+        "radio-r36: status=THREAD_DONE station={} code={} audio=PCM5101_I2S",
+        station.name,
+        code
+    );
+}
+
+fn stop_stream(reason: &'static str) {
+    unsafe { ffi::st77916_radio_http_mp3_stop_request(); }
+    RADIO_PLAYING.store(false, Ordering::SeqCst);
+    RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+    println!(
+        "radio-r36: action=STOP_REQUEST reason={} stop=DEFERRED_TO_STREAM_THREAD audio=PCM5101_I2S",
+        reason
+    );
+}
+
+fn stations() -> Vec<RadioStation> {
+    let path = Path::new(RADIO_LIST_PATH);
+    let Ok(text) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let (name, url) = if let Some((name, url)) = line.split_once('=') {
+            (name.trim(), url.trim())
+        } else if let Some((name, url)) = line.split_once('|') {
+            (name.trim(), url.trim())
+        } else {
+            continue;
+        };
+
+        if name.is_empty() || !url.starts_with("http://") {
+            continue;
+        }
+
+        out.push(RadioStation {
+            name: name.to_string(),
+            url: url.to_string(),
+        });
+    }
+
+    out
+}
+
+fn selected_index(len: usize) -> usize {
+    if len == 0 {
+        0
+    } else {
+        (RADIO_SELECTED_INDEX.load(Ordering::SeqCst) as usize) % len
+    }
+}
+
+fn trim_label(input: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for ch in input.chars().take(max_chars) {
+        out.push(ch);
+    }
+    out
+}
+
+fn seconds_to_hhmmss(seconds: u32) -> String {
+    let h = seconds / 3600;
+    let m = (seconds % 3600) / 60;
+    let s = seconds % 60;
+    if h > 0 {
+        format!("{}:{:02}:{:02}", h, m, s)
+    } else {
+        format!("{}:{:02}", m, s)
+    }
+}

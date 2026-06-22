@@ -1,0 +1,9 @@
+idf_component_register(SRCS "internet_radio_stream_shim.c"
+                       INCLUDE_DIRS "."
+                       REQUIRES esp_http_client chmorgan__esp-libhelix-mp3 audio_pcm_shim mbedtls esp-tls)
+
+# v0.1.36-r15: HTTPS radio streams use esp_http_client TLS transport when URL begins with https://
+
+# v0.1.36-r17: radio HTTPS uses esp_crt_bundle_attach via esp_http_client_config_t.crt_bundle_attach
+
+# v0.1.36-r18: internet_radio_stream_shim explicitly requires mbedtls for esp_crt_bundle.h

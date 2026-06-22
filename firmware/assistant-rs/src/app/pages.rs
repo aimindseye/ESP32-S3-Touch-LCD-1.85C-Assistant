@@ -3,14 +3,16 @@ pub enum AssistantPage {
     Home,
     Weather,
     Music,
+    InternetRadio,
     Assistant,
     Settings,
 }
 
-pub const ALL_PAGES: [AssistantPage; 5] = [
+pub const ALL_PAGES: [AssistantPage; 6] = [
     AssistantPage::Home,
     AssistantPage::Weather,
     AssistantPage::Music,
+    AssistantPage::InternetRadio,
     AssistantPage::Assistant,
     AssistantPage::Settings,
 ];
@@ -21,6 +23,7 @@ impl AssistantPage {
             Self::Home => "HOME",
             Self::Weather => "WEATHER",
             Self::Music => "MUSIC",
+            Self::InternetRadio => "RADIO",
             Self::Assistant => "ASSISTANT",
             Self::Settings => "SETTINGS",
         }
@@ -31,8 +34,9 @@ impl AssistantPage {
             Self::Home => 0,
             Self::Weather => 1,
             Self::Music => 2,
-            Self::Assistant => 3,
-            Self::Settings => 4,
+            Self::InternetRadio => 3,
+            Self::Assistant => 4,
+            Self::Settings => 5,
         }
     }
 
@@ -54,3 +58,5 @@ impl AssistantPage {
         ALL_PAGES[idx]
     }
 }
+
+// RAW-R42-VIDEO-PAGE-REMOVED-FROM-ENUM

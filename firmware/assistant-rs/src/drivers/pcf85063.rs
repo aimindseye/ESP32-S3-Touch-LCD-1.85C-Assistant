@@ -31,11 +31,7 @@ impl Pcf85063 {
         i2c.write(addr, &[]).map_err(Error::Bus)
     }
 
-    pub fn read_datetime<I2C>(
-        &self,
-        i2c: &mut I2C,
-        addr: u8,
-    ) -> Result<DateTime, Error<I2C::Error>>
+    pub fn read_datetime<I2C>(&self, i2c: &mut I2C, addr: u8) -> Result<DateTime, Error<I2C::Error>>
     where
         I2C: I2c,
     {
@@ -52,8 +48,35 @@ impl Pcf85063 {
             year: bcd_to_dec(buf[6]),
         })
     }
+
+    pub fn write_datetime<I2C>(
+        &self,
+        i2c: &mut I2C,
+        addr: u8,
+        dt: DateTime,
+    ) -> Result<(), Error<I2C::Error>>
+    where
+        I2C: I2c,
+    {
+        let buf = [
+            Self::SECONDS,
+            dec_to_bcd(dt.second.min(59)),
+            dec_to_bcd(dt.minute.min(59)),
+            dec_to_bcd(dt.hour.min(23)),
+            dec_to_bcd(dt.day.clamp(1, 31)),
+            0,
+            dec_to_bcd(dt.month.clamp(1, 12)),
+            dec_to_bcd(dt.year.min(99)),
+        ];
+
+        i2c.write(addr, &buf).map_err(Error::Bus)
+    }
 }
 
 fn bcd_to_dec(v: u8) -> u8 {
     ((v >> 4) * 10) + (v & 0x0F)
+}
+
+fn dec_to_bcd(v: u8) -> u8 {
+    ((v / 10) << 4) | (v % 10)
 }

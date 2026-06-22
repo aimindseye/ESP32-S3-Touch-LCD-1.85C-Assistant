@@ -42,11 +42,7 @@ impl Cst816 {
         i2c.write(addr, &[]).map_err(Error::Bus)
     }
 
-    pub fn read_touch<I2C>(
-        &self,
-        i2c: &mut I2C,
-        addr: u8,
-    ) -> Result<TouchPoint, Error<I2C::Error>>
+    pub fn read_touch<I2C>(&self, i2c: &mut I2C, addr: u8) -> Result<TouchPoint, Error<I2C::Error>>
     where
         I2C: I2c,
     {
@@ -92,11 +88,7 @@ impl Cst816 {
         })
     }
 
-    pub fn disable_auto_sleep<I2C>(
-        &self,
-        i2c: &mut I2C,
-        addr: u8,
-    ) -> Result<(), Error<I2C::Error>>
+    pub fn disable_auto_sleep<I2C>(&self, i2c: &mut I2C, addr: u8) -> Result<(), Error<I2C::Error>>
     where
         I2C: I2c,
     {

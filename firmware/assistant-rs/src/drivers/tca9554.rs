@@ -11,6 +11,7 @@ pub struct Tca9554 {
 }
 
 impl Tca9554 {
+    pub const INPUT_PORT: u8 = 0x00;
     pub const OUTPUT_PORT: u8 = 0x01;
     pub const CONFIG: u8 = 0x03;
 
@@ -23,6 +24,26 @@ impl Tca9554 {
         I2C: I2c,
     {
         i2c.write(addr, &[]).map_err(Error::Bus)
+    }
+
+    pub fn read_input_port<I2C>(&self, i2c: &mut I2C, addr: u8) -> Result<u8, Error<I2C::Error>>
+    where
+        I2C: I2c,
+    {
+        let mut value = [0u8; 1];
+        i2c.write_read(addr, &[Self::INPUT_PORT], &mut value)
+            .map_err(Error::Bus)?;
+        Ok(value[0])
+    }
+
+    pub fn read_config<I2C>(&self, i2c: &mut I2C, addr: u8) -> Result<u8, Error<I2C::Error>>
+    where
+        I2C: I2c,
+    {
+        let mut value = [0u8; 1];
+        i2c.write_read(addr, &[Self::CONFIG], &mut value)
+            .map_err(Error::Bus)?;
+        Ok(value[0])
     }
 
     pub fn set_config<I2C>(

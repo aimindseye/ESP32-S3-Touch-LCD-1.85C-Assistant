@@ -1,8 +1,13 @@
 pub mod actions;
 pub mod assistant;
 pub mod home;
+pub mod intents;
 pub mod model;
 pub mod music;
 pub mod pages;
+pub mod providers;
 pub mod settings;
+pub mod state;
+pub mod time;
 pub mod weather;
+pub mod wifi;
