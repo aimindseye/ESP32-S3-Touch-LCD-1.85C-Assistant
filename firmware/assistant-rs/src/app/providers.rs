@@ -31,6 +31,10 @@ impl LocalProviders {
         state.cycle_location();
     }
 
+    pub fn previous_weather_location(&self, state: &mut WeatherState) {
+        state.previous_location();
+    }
+
     pub fn toggle_weather_units(&self, state: &mut WeatherState) {
         state.toggle_units();
     }
@@ -70,3 +74,7 @@ impl LocalProviders {
 
 pub const PROVIDER_BOUNDARY_MARKER: &str =
     "v0.1.22 provider boundary: Home refresh plus Settings details hub";
+
+// RAW-R56-WEATHER-PREVIOUS-PROVIDER
+
+// RAW-R56-R1-WEATHER-PREVIOUS-PROVIDER

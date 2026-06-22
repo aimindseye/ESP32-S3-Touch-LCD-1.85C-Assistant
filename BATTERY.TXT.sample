@@ -1,0 +1,5 @@
+# ESP32-S3-Touch-LCD-1.85C Assistant battery calibration
+# Copy this file to SD root as /BATTERY.TXT
+adc_multiplier=3.02
+empty_mv=3000
+full_mv=4200

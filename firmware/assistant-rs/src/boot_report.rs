@@ -30,7 +30,7 @@ pub(crate) fn log_current_startup(
     _volume_percent: u8,
 ) {
     println!("\n=== {} ===", board_name);
-    println!("firmware: v0.1.36-r43 current=radio_names,media_touch_zones,music_radio_layout,ui_draw,boot_log_cleanup,media_base_cleanup,startup_order_cleanup,video_dead_source_cleanup,source_validator_stabilization");
+    println!("firmware: v0.1.36-r56-r2 current=radio_names,media_touch_zones,music_radio_layout,ui_draw,boot_log_cleanup,media_base_cleanup,startup_order_cleanup,video_dead_source_cleanup,source_validator_stabilization,screen_renderer_source_split,home_true_module,weather_true_module,music_true_module,assistant_true_module,settings_true_module,no_screen_includes,main_orchestration_cleanup,touch_handler_cleanup,page_assets_cleanup,media_action_cleanup,settings_action_cleanup,weather_action_cleanup,weather_nav_buttons,weather_nav_row_touch");
     println!(
         "runtime: profile={} source={} debug=false sleep=software+idle wake=touch-int",
         profile, profile_source
@@ -53,3 +53,43 @@ pub(crate) fn log_current_startup(
 // RAW-R42-R1-VIDEO-DEAD-SOURCE-COMPILE-REPAIR
 
 // RAW-R43-SOURCE-VALIDATOR-STABILIZATION
+
+// RAW-R44-SCREEN-RENDERER-SOURCE-SPLIT
+
+// RAW-R45-HOME-TRUE-SCREEN-MODULE-BOOT
+
+// RAW-R45-R1-HOME-MODULE-COMPILE-REPAIR
+
+// RAW-R46-R1-WEATHER-TRUE-SCREEN-MODULE-BOOT
+
+// RAW-R47-MUSIC-TRUE-SCREEN-MODULE-BOOT
+
+// RAW-R47-R1-MUSIC-MODULE-CALLSITE-COMPILE-REPAIR
+
+// RAW-R48-ASSISTANT-TRUE-SCREEN-MODULE-BOOT
+
+// RAW-R48-R1-ASSISTANT-ORB-CALLSITE-COMPILE-REPAIR
+
+// RAW-R49-SETTINGS-TRUE-SCREEN-MODULE-BOOT
+
+// RAW-R50-NO-SCREEN-INCLUDES-BOOT
+
+// RAW-R51-MAIN-ORCHESTRATION-CLEANUP-BOOT
+
+// RAW-R51-R1-ORCHESTRATION-COMPILE-REPAIR-BOOT
+
+// RAW-R52-TOUCH-HANDLER-CLEANUP-BOOT
+
+// RAW-R52-R1-TOUCH-ROUTER-CALLSITE-REPAIR-BOOT
+
+// RAW-R53-PAGE-ASSETS-CLEANUP-BOOT
+
+// RAW-R53-R1-VALIDATOR-REGEX-REPAIR-BOOT
+
+// RAW-R54-MEDIA-ACTION-CLEANUP-BOOT
+
+// RAW-R55-SETTINGS-ACTION-CLEANUP-BOOT
+
+// RAW-R56-R1-WEATHER-ACTION-CLEANUP-BOOT
+
+// RAW-R56-R2-WEATHER-NAV-ROW-LABEL-REPAIR-BOOT

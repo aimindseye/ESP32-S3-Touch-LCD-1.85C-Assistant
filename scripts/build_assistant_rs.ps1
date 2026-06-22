@@ -23,7 +23,7 @@ $env:RUST_BACKTRACE = "1"
 
 Push-Location $firmwareDir
 try {
-    cargo build --release
+    cargo +esp build --release
 }
 finally {
     Pop-Location

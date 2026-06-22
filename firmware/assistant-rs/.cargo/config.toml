@@ -11,4 +11,4 @@ build-std = ["std", "panic_abort"]
 [env]
 MCU = "esp32s3"
 CARGO_WORKSPACE_DIR = { value = "", relative = true }
-ESP_IDF_TOOLS_INSTALL_DIR = "custom:C:/e"
+ESP_IDF_TOOLS_INSTALL_DIR = "global"

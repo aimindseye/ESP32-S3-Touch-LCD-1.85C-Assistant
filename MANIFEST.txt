@@ -1,18 +1,22 @@
-ESP32-S3-Touch-LCD-1.85C-Assistant v0.1.14-r2-weather-guard-marker-repair files
+ESP32-S3-Touch-LCD-1.85C-Assistant
+Release: v0.1.36-r56-r2
 
-Replacement files:
-- firmware/assistant-rs/src/main.rs
-- scripts/validate_ui_baseline_freeze.ps1
-- readme.md
-- architecture.md
-- MANIFEST.txt
+Primary files:
+README.md
+architecture.md
+ARCHITECTURE.md
+docs/HARDWARE.md
+docs/RELEASE_v0.1.36-r56-r2.md
+docs/RELEASE_CHECKLIST.md
+scripts/validate_assistant_current.sh
+scripts/package_release.sh
+firmware/assistant-rs/
 
-Scope:
-- Fix stale Weather baseline freeze marker y=258 -> y=262
-- Preserve v0.1.14-r1 stale RGB565 asset cleanup
-- Preserve exact accepted five-screen UI baseline
-- Preserve accepted r12 touch baseline
-- No visual changes
-- No LVGL
-- No external integrations
-- No periodic SD/GPIO refresh
+Runtime modules:
+firmware/assistant-rs/src/screens/
+firmware/assistant-rs/src/page_assets.rs
+firmware/assistant-rs/src/page_orchestration.rs
+firmware/assistant-rs/src/touch_router.rs
+firmware/assistant-rs/src/media_action_router.rs
+firmware/assistant-rs/src/settings_action_router.rs
+firmware/assistant-rs/src/weather_action_router.rs

@@ -32,8 +32,8 @@ pub(crate) fn draw(frame: &mut [u16], time_label: &str) {
     crate::draw_text_centered_at(frame, 180, 150, &radio.status_label, RADIO_BLUE, 2);
 
     // Preserve accepted transport and progress primitives; do not reuse Music title renderer.
-    crate::draw_music_transport_controls(frame, radio.playing);
-    crate::draw_music_progress_row(
+    crate::screens::music::draw_music_transport_controls(frame, radio.playing);
+    crate::screens::music::draw_music_progress_row(
         frame,
         radio.progress_percent,
         &radio.elapsed_label,
@@ -46,3 +46,5 @@ pub(crate) fn draw(frame: &mut [u16], time_label: &str) {
 }
 
 // RADIO_R31_R2_ORPHAN_OVERLAY_FRAGMENT_REMOVED
+
+// RAW-R47-R1-RADIO-SCREEN-MUSIC-MODULE-CALLSITE

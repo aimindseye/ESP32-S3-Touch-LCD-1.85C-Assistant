@@ -25,3 +25,13 @@ if ($updated -ne $sdk) {
 } else {
     Write-Host "Partition path already current: $partitionPath"
 }
+
+$cargoConfigPath = Join-Path $firmwareDir ".cargo\config.toml"
+if (Test-Path $cargoConfigPath) {
+    $cargoConfig = Get-Content $cargoConfigPath -Raw
+    $cargoUpdated = $cargoConfig -replace 'ESP_IDF_TOOLS_INSTALL_DIR = "custom:C:/e"', 'ESP_IDF_TOOLS_INSTALL_DIR = "global"'
+    if ($cargoUpdated -ne $cargoConfig) {
+        Set-Content -Encoding ASCII $cargoConfigPath $cargoUpdated
+        Write-Host "Updated ESP_IDF_TOOLS_INSTALL_DIR for global ESP-IDF tooling"
+    }
+}

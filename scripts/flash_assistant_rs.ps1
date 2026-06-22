@@ -24,7 +24,7 @@ $env:RUST_BACKTRACE = "1"
 
 Push-Location $firmwareDir
 try {
-    cargo espflash flash --release --monitor --port $Port
+    cargo +esp espflash flash --release --monitor --port $Port
 }
 finally {
     Pop-Location

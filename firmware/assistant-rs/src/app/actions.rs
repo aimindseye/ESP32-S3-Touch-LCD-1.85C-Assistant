@@ -54,17 +54,7 @@ pub fn handle_select_action(model: &mut AppState, providers: &LocalProviders) ->
             AppAction::HomeStatus
         }
         AssistantPage::Weather => {
-            let y = model.last_touch.map(|touch| touch.y).unwrap_or(180);
-            // v0.1.21-r2: center/body tap is the location editor action.
-            // Changing location auto-fetches immediately in main.rs so the
-            // screen does not get stuck on a cached city.
-            if y >= 300 {
-                providers.toggle_weather_units(&mut model.weather);
-                AppAction::WeatherUnits
-            } else {
-                providers.cycle_weather_location(&mut model.weather);
-                AppAction::WeatherLocation
-            }
+            crate::weather_action_router::handle_weather_select_action(model, providers)
         }
         AssistantPage::Music => {
             providers.toggle_music_play_pause(&mut model.music);
@@ -182,3 +172,7 @@ pub fn handle_select_action(model: &mut AppState, providers: &LocalProviders) ->
 // RAW-R42-VIDEO-ACTION-REMOVED
 
 // RAW-R42-R1-VIDEO-ACTION-CALLSITE-REMOVED
+
+// RAW-R56-WEATHER-SELECT-ACTION-ROUTED
+
+// RAW-R56-R1-WEATHER-SELECT-ACTION-ROUTED

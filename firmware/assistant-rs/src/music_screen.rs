@@ -30,8 +30,8 @@ pub(crate) fn draw(model: &crate::AppState, frame: &mut [u16]) {
     );
 
     // Reuse the accepted r35 visually separated transport/volume controls.
-    crate::draw_music_transport_controls(frame, audio.playing);
-    crate::draw_music_progress_row(
+    crate::screens::music::draw_music_transport_controls(frame, audio.playing);
+    crate::screens::music::draw_music_progress_row(
         frame,
         audio.progress_percent,
         &audio.elapsed_label,
@@ -44,3 +44,5 @@ pub(crate) fn draw(model: &crate::AppState, frame: &mut [u16]) {
 
     // RAW-R36-MUSIC-RADIO-STYLE-LAYOUT
 }
+
+// RAW-R47-R1-MUSIC-SCREEN-MODULE-CALLSITE

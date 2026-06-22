@@ -1,6 +1,6 @@
 [package]
 name = "esp32-s3-touch-lcd-185c-assistant"
-version = "0.1.14"
+version = "0.1.23"
 edition = "2021"
 resolver = "2"
 
@@ -25,7 +25,6 @@ esp-idf-sys = { version = "0.36", features = ["binstart"] }
 
 embedded-svc = "0.28"
 embedded-hal = "1"
-
 [build-dependencies]
 embuild = "0.33"
 
@@ -34,4 +33,4 @@ esp_idf_version = "v5.3.2"
 esp_idf_sdkconfig_defaults = ["sdkconfig.defaults"]
 
 [[package.metadata.esp-idf-sys.extra_components]]
-component_dirs = ["components/st77916_shim"]
+component_dirs = ["components/st77916_shim", "components/audio_pcm_shim", "components/chmorgan__esp-libhelix-mp3", "components/audio_mp3_helix_shim", "components/internet_radio_stream_shim"]

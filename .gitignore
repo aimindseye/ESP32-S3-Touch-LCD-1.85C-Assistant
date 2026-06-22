@@ -10,15 +10,25 @@ build/
 *.hex
 *.partitions.bin
 *.uf2
-
 # Secrets / local config
 secrets.h
 wifi_config.h
 assistant_secrets.h
 *.local.h
-
 # OS / editor
 .DS_Store
 Thumbs.db
 *.swp
 *.swo
+# local cleanup/build/release artifacts
+.cleanup/
+dist/
+sdcard/
+firmware/assistant-rs/target/
+firmware/assistant-rs/.embuild/
+firmware/assistant-rs/.v0.1*/
+scripts/_archive_*/
+*.bak
+*.bak.*
+*.orig
+*.tmp

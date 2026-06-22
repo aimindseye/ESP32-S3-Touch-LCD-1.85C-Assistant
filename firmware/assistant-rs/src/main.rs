@@ -1,5 +1,7 @@
 #![allow(dead_code)]
+mod screens;
 
+// RAW-R50-SCREEN-MODULES-NO-INCLUDES
 mod app;
 mod audio_foundation;
 mod board;
@@ -155,6 +157,15 @@ macro_rules! debug_println {
     }};
 }
 
+mod settings_action_router;
+mod weather_action_router;
+
+mod media_action_router;
+
+mod page_assets;
+
+mod page_orchestration;
+mod touch_router;
 fn log_debug_enabled() -> bool {
     LOG_DEBUG_ENABLED.load(Ordering::Relaxed)
 }
@@ -764,38 +775,6 @@ fn asset_sd_error_label(code: i32) -> &'static str {
         -4 => "SHORT_READ",
         -5 => "BAD_PATH",
         _ => "SD_FAIL",
-    }
-}
-
-fn draw_page_fallback_base(frame: &mut [u16], page: AssistantPage) {
-    frame.fill(BLACK);
-    let accent = match page {
-        AssistantPage::Home => ACCENT_HOME,
-        AssistantPage::Weather => ACCENT_WEATHER,
-        AssistantPage::Music => ACCENT_MUSIC,
-        AssistantPage::InternetRadio => ACCENT_MUSIC,
-        AssistantPage::Assistant => ACCENT_ASSISTANT,
-        AssistantPage::Settings => ACCENT_SETTINGS,
-    };
-    fill_circle(frame, CX, CY, R_OUTER - 6, BG);
-    stroke_circle(frame, CX, CY, R_OUTER, RING_DIM);
-    draw_arc_segment(frame, CX, CY, 170, 2, 220, 320, accent);
-    draw_text_centered_at(frame, 180, 70, page.title(), accent, 2);
-    draw_text_centered_at(frame, 180, 314, "SD ASSET FALLBACK", MUTED, 1);
-}
-
-fn draw_cached_page_base(asset_cache: &mut UiAssetCache, frame: &mut [u16], page: AssistantPage) {
-    // RAW-R39-MEDIA-PAGES-BLACK-BASE
-    // Music and InternetRadio now own their clean black media layout, so avoid
-    // loading/drawing the old baked MUSIC.RGB background for those pages.
-    if matches!(page, AssistantPage::Music | AssistantPage::InternetRadio) {
-        frame.fill(BLACK);
-        return;
-    }
-
-    match asset_cache.ensure_page(page) {
-        UiAssetSource::Sd => asset_cache.copy_to(frame),
-        UiAssetSource::Fallback => draw_page_fallback_base(frame, page),
     }
 }
 
@@ -2083,7 +2062,7 @@ fn run_app() -> Result<()> {
                 } else if let Some(reason) = touch_tracker.finish_reason(now) {
                     if let Some(summary) = touch_tracker.finish(now, reason) {
                         last_user_activity = now;
-                        if process_touch_summary(
+                        if touch_router::process_touch_summary(
                             &mut model,
                             &providers,
                             &mut wifi,
@@ -2458,7 +2437,7 @@ fn load_weather_cache_from_sd(model: &mut AppState) {
     if read_len <= 0 {
         debug_println!(
             "weather-cache: not loaded reason={}",
-            weather_sd_error_label(read_len)
+            screens::weather::weather_sd_error_label(read_len)
         );
         return;
     }
@@ -2496,18 +2475,8 @@ fn persist_weather_cache(model: &AppState) {
     } else {
         println!(
             "weather-cache: persist failed reason={}",
-            weather_sd_error_label(result)
+            screens::weather::weather_sd_error_label(result)
         );
-    }
-}
-
-fn weather_sd_error_label(code: i32) -> &'static str {
-    match code {
-        -1 => "BAD ARG",
-        -2 => "SD MOUNT",
-        -3 => "NO FILE",
-        -4 => "SD IO",
-        _ => "SD FAIL",
     }
 }
 
@@ -2544,7 +2513,7 @@ fn refresh_weather_provider(model: &mut AppState) {
         unsafe { ffi::st77916_http_get(url.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) };
 
     if read_len <= 0 {
-        let reason = weather_http_error_label(read_len);
+        let reason = screens::weather::weather_http_error_label(read_len);
         model.weather.apply_failed(reason);
         println!(
             "weather-fetch: failed location={} reason={}",
@@ -2593,7 +2562,7 @@ fn refresh_weather_provider(model: &mut AppState) {
             persist_weather_cache(model);
         }
         Err(reason) => {
-            let sample = weather_body_sample(text, 240);
+            let sample = screens::weather::weather_body_sample(text, 240);
             debug_println!("weather-fetch: body sample={}", sample);
             model.weather.apply_failed(reason);
             println!(
@@ -2603,26 +2572,6 @@ fn refresh_weather_provider(model: &mut AppState) {
             );
         }
     }
-}
-
-fn weather_http_error_label(code: i32) -> &'static str {
-    match code {
-        -1 => "BAD ARG",
-        -2 => "NO CLIENT",
-        -3 => "HTTP OPEN",
-        -4 => "HTTP READ",
-        -1300..=-1200 => "HTTP 2XX?",
-        -1404 => "HTTP 404",
-        -1500..=-1000 => "HTTP STATUS",
-        _ => "HTTP FAIL",
-    }
-}
-
-fn weather_body_sample(body: &str, max_chars: usize) -> String {
-    body.chars()
-        .map(|ch| if ch.is_control() { ' ' } else { ch })
-        .take(max_chars)
-        .collect()
 }
 
 fn local_datetime_from_system_time() -> Option<DateTime> {
@@ -2936,107 +2885,11 @@ fn render_if_dirty(
         return Ok(());
     }
 
-    draw_assistant_page(model, frame, asset_cache)?;
+    screens::assistant::draw_assistant_page(model, frame, asset_cache)?;
     debug_println!("render: coalesced repaint ok");
     *last_render = Instant::now();
     *dirty = false;
     Ok(())
-}
-
-fn compact_touch_kind(summary: &TouchSummary) -> &'static str {
-    if summary.span_x <= CENTER_TAP_MAX_MOVE_PX
-        && summary.span_y <= CENTER_TAP_MAX_MOVE_PX
-        && summary.duration_ms <= TOUCH_TAP_MAX_MS as u128
-    {
-        return "tap";
-    }
-
-    let abs_span_x = summary.span_x.abs();
-    let abs_span_y = summary.span_y.abs();
-
-    if abs_span_x >= UNIVERSAL_SWIPE_MIN_DX && abs_span_x >= abs_span_y {
-        if summary.dx < 0 {
-            "swipe-left"
-        } else {
-            "swipe-right"
-        }
-    } else if abs_span_y >= UNIVERSAL_SWIPE_MIN_DX {
-        if summary.dy < 0 {
-            "swipe-up"
-        } else {
-            "swipe-down"
-        }
-    } else {
-        "touch"
-    }
-}
-
-fn process_touch_summary(
-    model: &mut AppState,
-    providers: &LocalProviders,
-    wifi: &mut EspWifi<'static>,
-    wifi_connect_deadline: &mut Option<Instant>,
-    summary: TouchSummary,
-    now: Instant,
-    last_navigation: &mut Instant,
-) -> bool {
-    if log_debug_enabled() {
-        debug_println!(
-            "touch-track: finish id={} reason={} samples={} start=({}, {}) end=({}, {}) minmax=({}, {})..({}, {}) span={} dx={} dy={} ms={} gesture=0x{:02X}",
-            summary.touch_id,
-            summary.finish_reason,
-            summary.sample_count,
-            summary.start_x,
-            summary.start_y,
-            summary.end_x,
-            summary.end_y,
-            summary.min_x,
-            summary.min_y,
-            summary.max_x,
-            summary.max_y,
-            summary.span_x,
-            summary.dx,
-            summary.dy,
-            summary.duration_ms,
-            summary.gesture
-        );
-    } else {
-        println!(
-            "touch: id={} kind={} page={:?} end=({}, {}) ms={} gesture=0x{:02X}",
-            summary.touch_id,
-            compact_touch_kind(&summary),
-            model.current_page,
-            summary.end_x,
-            summary.end_y,
-            summary.duration_ms,
-            summary.gesture
-        );
-    }
-
-    if let Some(intent) = settings_detail_intent_from_touch_summary(model, &summary) {
-        handle_intent(model, providers, wifi, wifi_connect_deadline, intent);
-        return true;
-    }
-
-    if audio_r33_handle_music_touch(model, &summary) {
-        return true;
-    }
-
-    if let Some(intent) = intent_from_touch_summary(&summary) {
-        if matches!(intent, UiIntent::NextPage | UiIntent::PreviousPage) {
-            if now.duration_since(*last_navigation) < Duration::from_millis(TOUCH_NAV_COOLDOWN_MS) {
-                debug_println!("touch: navigation ignored during cooldown");
-                return false;
-            }
-            *last_navigation = now;
-        }
-
-        handle_intent(model, providers, wifi, wifi_connect_deadline, intent);
-        true
-    } else {
-        debug_println!("touch: ignored movement/tap outside classifier thresholds");
-        false
-    }
 }
 
 fn handle_button_event(
@@ -3073,183 +2926,6 @@ fn handle_button_event(
     }
 }
 
-fn handle_intent(
-    model: &mut AppState,
-    providers: &LocalProviders,
-    wifi: &mut EspWifi<'static>,
-    wifi_connect_deadline: &mut Option<Instant>,
-    intent: UiIntent,
-) {
-    match intent {
-        UiIntent::NextPage => {
-            model.next_page();
-            println!("nav: NextPage -> {:?}", model.current_page);
-        }
-        UiIntent::PreviousPage => {
-            model.previous_page();
-            println!("nav: PreviousPage -> {:?}", model.current_page);
-        }
-        UiIntent::Select => {
-            model.note_intent(UiIntent::Select);
-            if model.current_page == AssistantPage::InternetRadio {
-                audio_r33_radio_center_action(model);
-                return;
-            }
-            if model.current_page == AssistantPage::Music {
-                audio_r33_music_center_action(model);
-                return;
-            }
-            let action = handle_select_action(model, providers);
-            println!("{}", action.log_marker());
-
-            if action == AppAction::SettingsToggle
-                && model.current_page == AssistantPage::Settings
-                && model.settings.selected == SettingsPanel::Network
-                && model.settings.take_wifi_connect_request()
-            {
-                start_wifi_credential_import_and_connect(model, wifi, wifi_connect_deadline);
-            }
-
-            if action == AppAction::SettingsToggle
-                && model.current_page == AssistantPage::Settings
-                && model.settings.detail_open
-                && model.settings.selected == SettingsPanel::Sound
-            {
-                audio_foundation::set_volume_percent(model.settings.volume_percent);
-                println!(
-                    "audio-settings-r34: action=VOLUME volume={} route=PCM5101_I2S audio=PCM5101_I2S",
-                    model.settings.volume_percent
-                );
-            }
-
-            if matches!(action, AppAction::HomeStatus | AppAction::WeatherRefresh) {
-                refresh_weather_provider(model);
-            }
-
-            if matches!(action, AppAction::WeatherLocation | AppAction::WeatherUnits)
-                || (action == AppAction::SettingsToggle
-                    && model.current_page == AssistantPage::Settings
-                    && model.settings.detail_open
-                    && model.settings.selected == SettingsPanel::Weather)
-            {
-                println!(
-                    "weather-config: changed location={} units={} action={}",
-                    model.weather.location_label(),
-                    model.weather.units.suffix(),
-                    action.status_label()
-                );
-                refresh_weather_provider(model);
-            }
-        }
-        UiIntent::SettingsBackToOverview => {
-            model.note_intent(UiIntent::SettingsBackToOverview);
-            providers.close_settings_detail(&mut model.settings);
-            println!(
-                "settings-nav: detail back -> overview selected={}",
-                model.settings.current_panel_label()
-            );
-            println!(
-                "screen: SettingsBack overview selected={}",
-                model.settings.current_panel_label()
-            );
-        }
-        UiIntent::SettingsNextDetail => {
-            model.note_intent(UiIntent::SettingsNextDetail);
-            providers.next_settings_detail(&mut model.settings);
-            println!(
-                "settings-nav: next detail -> {}",
-                model.settings.current_panel_label()
-            );
-        }
-        UiIntent::SettingsPreviousDetail => {
-            model.note_intent(UiIntent::SettingsPreviousDetail);
-            providers.previous_settings_detail(&mut model.settings);
-            println!(
-                "settings-nav: previous detail -> {}",
-                model.settings.current_panel_label()
-            );
-        }
-        UiIntent::BackHome => {
-            model.set_page(AssistantPage::Home);
-            model.note_intent(UiIntent::BackHome);
-            println!("nav: BackHome -> Home");
-        }
-        UiIntent::AssistantHold => {
-            model.note_intent(UiIntent::AssistantHold);
-            println!("action: Assistant placeholder");
-        }
-        UiIntent::BootReserved => {
-            model.note_intent(UiIntent::BootReserved);
-            println!("action: BOOT reserved");
-        }
-        UiIntent::PowerMenu => {
-            model.note_intent(UiIntent::PowerMenu);
-            println!("action: Power menu placeholder");
-        }
-    }
-}
-
-fn settings_detail_intent_from_touch_summary(
-    model: &AppState,
-    summary: &TouchSummary,
-) -> Option<UiIntent> {
-    if model.current_page != AssistantPage::Settings || !model.settings.detail_open {
-        return None;
-    }
-
-    if is_settings_detail_header_tap(summary) {
-        println!("touch-class: settings detail header tap accepted back");
-        return Some(UiIntent::SettingsBackToOverview);
-    }
-
-    let up_travel = summary.start_y as i16 - summary.min_y as i16;
-    let down_travel = summary.max_y as i16 - summary.start_y as i16;
-    let signed_span_dy = if up_travel >= down_travel {
-        -up_travel
-    } else {
-        down_travel
-    };
-
-    let abs_span_dy = signed_span_dy.abs();
-    let abs_span_x = summary.span_x.abs();
-    let vertical_dominant = abs_span_dy >= SETTINGS_DETAIL_VERTICAL_SWIPE_MIN_DY
-        && (abs_span_dy as i32 * 2) > (abs_span_x as i32 * 3);
-
-    // CST816 reports 0x01 for up and 0x02 for down on this family.
-    // Only consume vertical gestures inside Settings detail. Horizontal swipes
-    // continue to use the global page navigation classifier below.
-    let gesture_vertical = match summary.gesture {
-        0x01 => Some(UiIntent::SettingsPreviousDetail),
-        0x02 => Some(UiIntent::SettingsNextDetail),
-        _ => None,
-    };
-
-    if vertical_dominant {
-        let intent = if signed_span_dy < 0 {
-            UiIntent::SettingsPreviousDetail
-        } else {
-            UiIntent::SettingsNextDetail
-        };
-
-        return log_settings_detail_vertical_intent(intent, signed_span_dy, summary);
-    }
-
-    if let Some(intent) = gesture_vertical {
-        if abs_span_x < TOUCH_GESTURE_SPAN_PREFER_PX {
-            return log_settings_detail_vertical_intent(intent, signed_span_dy, summary);
-        }
-    }
-
-    None
-}
-
-fn is_settings_detail_header_tap(summary: &TouchSummary) -> bool {
-    summary.span_x <= CENTER_TAP_MAX_MOVE_PX
-        && summary.span_y <= CENTER_TAP_MAX_MOVE_PX
-        && summary.duration_ms <= TOUCH_TAP_MAX_MS as u128
-        && summary.end_y <= SETTINGS_DETAIL_HEADER_TAP_Y_MAX
-}
-
 fn log_settings_detail_vertical_intent(
     intent: UiIntent,
     signed_span_dy: i16,
@@ -3274,112 +2950,6 @@ fn log_settings_detail_vertical_intent(
     Some(intent)
 }
 
-fn intent_from_touch_summary(summary: &TouchSummary) -> Option<UiIntent> {
-    let left_travel = summary.start_x as i16 - summary.min_x as i16;
-    let right_travel = summary.max_x as i16 - summary.start_x as i16;
-    let signed_span_dx = if left_travel >= right_travel {
-        -left_travel
-    } else {
-        right_travel
-    };
-    let abs_span_dx = signed_span_dx.abs();
-    let abs_span_y = summary.span_y.abs();
-    let horizontal_dominant = (abs_span_dx as i32 * 2) > (abs_span_y as i32 * 3);
-
-    let gesture_intent = match summary.gesture {
-        CST816_GESTURE_LEFT => Some(UiIntent::NextPage),
-        CST816_GESTURE_RIGHT => Some(UiIntent::PreviousPage),
-        _ => None,
-    };
-
-    let span_intent = if abs_span_dx >= UNIVERSAL_SWIPE_MIN_DX && horizontal_dominant {
-        if signed_span_dx < 0 {
-            Some(UiIntent::NextPage)
-        } else {
-            Some(UiIntent::PreviousPage)
-        }
-    } else {
-        None
-    };
-
-    if let Some(gesture_intent) = gesture_intent {
-        if let Some(span_intent) = span_intent {
-            if gesture_intent != span_intent {
-                println!(
-                    "touch-class: gesture/span disagree gesture=0x{:02X} span_dx={} span={} prefer={}",
-                    summary.gesture,
-                    signed_span_dx,
-                    summary.span_x,
-                    if abs_span_dx < TOUCH_GESTURE_SPAN_PREFER_PX {
-                        "gesture"
-                    } else {
-                        "span"
-                    }
-                );
-
-                if abs_span_dx >= TOUCH_GESTURE_SPAN_PREFER_PX {
-                    return log_span_intent(span_intent);
-                }
-            }
-        }
-
-        return log_gesture_intent(gesture_intent);
-    }
-
-    if let Some(span_intent) = span_intent {
-        return log_span_intent(span_intent);
-    }
-
-    let center_tap = summary.span_x <= CENTER_TAP_MAX_MOVE_PX
-        && summary.span_y <= CENTER_TAP_MAX_MOVE_PX
-        && summary.duration_ms <= TOUCH_TAP_MAX_MS as u128
-        && (CENTER_TAP_X_MIN..=CENTER_TAP_X_MAX).contains(&summary.end_x)
-        && (CENTER_TAP_Y_MIN..=CENTER_TAP_Y_MAX).contains(&summary.end_y);
-
-    if center_tap {
-        debug_println!("touch-class: center-tap accepted");
-        return Some(UiIntent::Select);
-    }
-
-    if summary.sample_count < 2 {
-        debug_println!(
-            "touch-class: ignored insufficient samples samples={} dx={} dy={} span={} gesture=0x{:02X}",
-            summary.sample_count, summary.dx, summary.dy, summary.span_x, summary.gesture
-        );
-        return None;
-    }
-
-    if abs_span_y >= UNIVERSAL_SWIPE_MIN_DX && abs_span_y > abs_span_dx {
-        debug_println!(
-            "touch-class: ignored vertical swipe dx={} dy={} span={} gesture=0x{:02X}",
-            summary.dx,
-            summary.dy,
-            summary.span_x,
-            summary.gesture
-        );
-        return None;
-    }
-
-    debug_println!(
-        "touch-class: ignored below-threshold movement dx={} dy={} span={} gesture=0x{:02X}",
-        summary.dx,
-        summary.dy,
-        summary.span_x,
-        summary.gesture
-    );
-    None
-}
-
-fn log_gesture_intent(intent: UiIntent) -> Option<UiIntent> {
-    match intent {
-        UiIntent::NextPage => println!("touch-class: gesture-left accepted next"),
-        UiIntent::PreviousPage => println!("touch-class: gesture-right accepted previous"),
-        _ => {}
-    }
-
-    Some(intent)
-}
-
 fn log_span_intent(intent: UiIntent) -> Option<UiIntent> {
     match intent {
         UiIntent::NextPage => println!("touch-class: span swipe-left accepted next"),
@@ -3388,88 +2958,6 @@ fn log_span_intent(intent: UiIntent) -> Option<UiIntent> {
     }
 
     Some(intent)
-}
-
-fn draw_assistant_page(
-    model: &AppState,
-    frame: &mut [u16],
-    asset_cache: &mut UiAssetCache,
-) -> Result<()> {
-    let page = model.current_page;
-    draw_cached_page_base(asset_cache, frame, page);
-
-    match page {
-        AssistantPage::Home => draw_home_tile(model, frame),
-        AssistantPage::Weather => draw_weather_tile(model, frame),
-        AssistantPage::Music => draw_music_tile(model, frame),
-        AssistantPage::InternetRadio => draw_internet_radio_screen(model, frame),
-        AssistantPage::Assistant => draw_ai_assistant_tile(model, frame),
-        AssistantPage::Settings => draw_settings_tile(model, frame),
-    }
-
-    draw_page_dots(model, frame);
-
-    if !unsafe { ffi::st77916_panel_draw_rgb565(0, 0, 359, 359, frame.as_mut_ptr()) } {
-        bail!("st77916_panel_draw_rgb565 returned false");
-    }
-
-    Ok(())
-}
-
-fn draw_home_tile(model: &AppState, frame: &mut [u16]) {
-    if model.home.status_detail_open {
-        draw_watch_outer(frame, ACCENT_HOME);
-        draw_arc_segment(frame, CX, CY, 166, 2, 204, 258, ACCENT_HOME_BLUE);
-        draw_arc_segment(frame, CX, CY, 166, 2, 282, 336, ACCENT_HOME);
-        draw_arc_segment(frame, CX, CY, 166, 2, 24, 76, ACCENT_WEATHER);
-        draw_arc_segment(frame, CX, CY, 166, 2, 104, 156, ACCENT_HOME_GREEN);
-        draw_assistant_orb(frame, 180, 112, 28, ACCENT_HOME);
-        draw_chip(frame, 78, 170, 88, 30, "BAT", ACCENT_HOME_BLUE, true);
-        draw_chip(frame, 194, 170, 88, 30, "WIFI", ACCENT_HOME, true);
-        draw_chip(
-            frame,
-            116,
-            218,
-            128,
-            30,
-            "SD / RTC",
-            ACCENT_HOME_GREEN,
-            true,
-        );
-        draw_text_centered(frame, 270, model.home.detail_label(), ACCENT_HOME, 1);
-    } else {
-        // v0.1.10-r2 Home Option C Minimal Dashboard.
-        // Option C avoids heavy arcs and large top pills; it uses compact status labels,
-        // a centered date capsule, dominant time, and a split weather card.
-        draw_home_battery_complication(frame, 66, 58, model.battery_percent_value());
-        draw_text(frame, 86, 53, &model.battery_home_text(), WHITE, 1);
-
-        draw_wifi_icon(frame, 218, 58, WHITE);
-        draw_text(frame, 238, 53, &model.wifi_home_text(), WHITE, 1);
-
-        draw_text_centered_at(frame, 180, 102, &model.rtc_home_date_text(), WHITE, 2);
-
-        draw_numeric_value_centered(frame, 122, &model.rtc_hms(), 42, 6, WHITE);
-
-        let condition = model.home_weather_condition();
-        draw_home_weather_icon(frame, 106, 250, condition);
-        draw_text_centered_at(frame, 106, 278, condition, WHITE, 1);
-        draw_text_centered_at(frame, 247, 262, model.home_weather_temp(), WHITE, 3);
-    }
-}
-
-fn draw_home_battery_complication(frame: &mut [u16], cx: i32, cy: i32, percent: Option<u8>) {
-    let x = cx - 10;
-    let y = cy - 6;
-    stroke_rect(frame, x, y, 20, 12, WHITE);
-    fill_rect(frame, x + 21, y + 4, 3, 4, WHITE);
-
-    if let Some(pct) = percent {
-        let fill_w = ((pct.min(100) as i32) * 16 / 100).max(2);
-        fill_rect(frame, x + 2, y + 2, fill_w, 8, ACCENT_HOME);
-    } else {
-        fill_rect(frame, x + 2, y + 2, 8, 8, ACCENT_HOME_BLUE);
-    }
 }
 
 fn draw_calendar_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
@@ -3481,172 +2969,6 @@ fn draw_calendar_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
     fill_rect(frame, cx + 2, cy + 1, 2, 2, color);
 }
 
-fn draw_home_weather_icon(frame: &mut [u16], cx: i32, cy: i32, condition: &str) {
-    match condition {
-        "CLEAR" | "SUNNY" => draw_timeline_sun_icon(frame, cx, cy, ACCENT_WEATHER),
-        "CLOUDY" | "LOCAL" => draw_timeline_cloud_icon(frame, cx, cy, WHITE),
-        "RAIN" => draw_timeline_rain_icon(frame, cx, cy),
-        "STORM" => draw_timeline_storm_icon(frame, cx, cy),
-        "BREEZY" => draw_timeline_wind_icon(frame, cx, cy, WHITE),
-        _ => draw_timeline_cloud_icon(frame, cx, cy, WHITE),
-    }
-}
-
-fn draw_weather_tile(model: &AppState, frame: &mut [u16]) {
-    // Option D large-strip layout:
-    // main summary is compact; the lower third has large pill cards.
-    // main icon y=34..64, temperature y=70..118, condition y=138,
-    // large timeline cards y=176..278, sample y=306.
-    let temp = if model.weather.temperature_label() == "--" {
-        "72F"
-    } else {
-        model.weather.temperature_label()
-    };
-    let condition = compact_condition(model.weather.condition_label());
-
-    match condition {
-        "CLEAR" | "SUNNY" => draw_sun_icon(frame, 180, 40, 11, ACCENT_WEATHER),
-        "CLOUDY" => draw_cloud_icon_medium(frame, 180, 42, WHITE),
-        "BREEZY" | "LOCAL" => draw_wind_icon_compact(frame, 180, 42, WHITE),
-        _ => draw_wind_icon_compact(frame, 180, 42, WHITE),
-    }
-
-    draw_numeric_value_centered(frame, 70, temp, 24, 4, WHITE);
-    draw_text_centered(frame, 138, model.weather.location_label(), WHITE, 2);
-    draw_weather_hour_values(frame, &model.weather.hourly_slots, condition);
-    draw_text_centered(frame, 306, &model.weather.footer_label(), WHITE, 1);
-}
-
-// v0.1.33-r1 source-marker: existing_music_screen_audio_controls screen=Music path=/AUDIO controls=LEFT_PREV,CENTER_PLAY_STOP,RIGHT_NEXT wav_pcm=SCREEN_STATE_ONLY mp3_decode=DISABLED output=HARDWARE_GATED_OR_I2S_PENDING video_audio=DEFERRED
-fn audio_r33_is_tap(summary: &TouchSummary) -> bool {
-    summary.span_x <= CENTER_TAP_MAX_MOVE_PX
-        && summary.span_y <= CENTER_TAP_MAX_MOVE_PX
-        && summary.duration_ms <= TOUCH_TAP_MAX_MS as u128
-}
-
-fn audio_r33_radio_center_action(model: &mut AppState) {
-    let action = internet_radio::toggle_play_stop();
-    model.last_action = match action {
-        "RadioPlay" => "RADIO PLAY",
-        "RadioStop" => "RADIO STOP",
-        "RadioNoStations" => "RADIO NO STATIONS",
-        _ => "RADIO",
-    };
-    println!("action: {}", action);
-}
-
-fn audio_r33_music_center_action(model: &mut AppState) {
-    let action = audio_foundation::music_toggle_play_stop();
-    model.last_action = match action {
-        "AudioPlay" => "AUDIO PLAY",
-        "AudioStop" => "AUDIO STOP",
-        "AudioMp3ProbeOnly" => "AUDIO MP3 PROBE",
-        _ => "AUDIO",
-    };
-    println!("action: {}", action);
-}
-
-fn media_touch_from_summary(summary: &TouchSummary) -> media_controls::MediaTouch {
-    media_controls::MediaTouch {
-        end_x: summary.end_x,
-        end_y: summary.end_y,
-        span_x: summary.span_x,
-        span_y: summary.span_y,
-        dx: summary.dx,
-        dy: summary.dy,
-        duration_ms: summary.duration_ms,
-        gesture: summary.gesture,
-    }
-}
-
-fn audio_r33_handle_music_touch(model: &mut AppState, summary: &TouchSummary) -> bool {
-    let Some(control) = media_controls::action_from_touch(media_touch_from_summary(summary)) else {
-        return false;
-    };
-
-    if model.current_page == AssistantPage::InternetRadio {
-        let action = match control {
-            media_controls::MediaControlAction::VolumeDown => {
-                model.settings.volume_percent = model.settings.volume_percent.saturating_sub(5);
-                audio_foundation::set_volume_percent(model.settings.volume_percent);
-                internet_radio::set_volume_percent(model.settings.volume_percent);
-                "RadioVolDown"
-            }
-            media_controls::MediaControlAction::Previous => internet_radio::previous_station(),
-            media_controls::MediaControlAction::PlayStop => internet_radio::toggle_play_stop(),
-            media_controls::MediaControlAction::Next => internet_radio::next_station(),
-            media_controls::MediaControlAction::VolumeUp => {
-                model.settings.volume_percent =
-                    model.settings.volume_percent.saturating_add(5).min(100);
-                audio_foundation::set_volume_percent(model.settings.volume_percent);
-                internet_radio::set_volume_percent(model.settings.volume_percent);
-                "RadioVolUp"
-            }
-        };
-
-        model.last_action = match action {
-            "RadioPlay" => "RADIO PLAY",
-            "RadioStop" => "RADIO STOP",
-            "RadioNext" => "RADIO NEXT",
-            "RadioPrev" => "RADIO PREV",
-            "RadioVolDown" => "RADIO VOL -",
-            "RadioVolUp" => "RADIO VOL +",
-            "RadioNoStations" => "RADIO NO STATIONS",
-            _ => "RADIO",
-        };
-        println!(
-            "radio-r35: touch action={} zone={} x={} y={} controls=DEDICATED_ZONES audio=PCM5101_I2S",
-            action,
-            media_controls::action_label(control),
-            summary.end_x,
-            summary.end_y
-        );
-        println!("action: {}", action);
-        return true;
-    }
-
-    if model.current_page != AssistantPage::Music {
-        return false;
-    }
-
-    let action = match control {
-        media_controls::MediaControlAction::VolumeDown => {
-            model.settings.volume_percent = model.settings.volume_percent.saturating_sub(5);
-            audio_foundation::set_volume_percent(model.settings.volume_percent);
-            "AudioVolDown"
-        }
-        media_controls::MediaControlAction::Previous => audio_foundation::music_previous(),
-        media_controls::MediaControlAction::PlayStop => audio_foundation::music_toggle_play_stop(),
-        media_controls::MediaControlAction::Next => audio_foundation::music_next(),
-        media_controls::MediaControlAction::VolumeUp => {
-            model.settings.volume_percent =
-                model.settings.volume_percent.saturating_add(5).min(100);
-            audio_foundation::set_volume_percent(model.settings.volume_percent);
-            "AudioVolUp"
-        }
-    };
-
-    model.last_action = match action {
-        "AudioPlay" => "AUDIO PLAY",
-        "AudioStop" => "AUDIO STOP",
-        "AudioNext" => "AUDIO NEXT",
-        "AudioPrev" => "AUDIO PREV",
-        "AudioVolDown" => "AUDIO VOL -",
-        "AudioVolUp" => "AUDIO VOL +",
-        "AudioMp3ProbeOnly" => "AUDIO MP3 PROBE",
-        _ => "AUDIO",
-    };
-    println!(
-        "audio-r35: touch action={} zone={} x={} y={} controls=DEDICATED_ZONES audio=PCM5101_I2S",
-        action,
-        media_controls::action_label(control),
-        summary.end_x,
-        summary.end_y
-    );
-    println!("action: {}", action);
-    true
-}
-
 fn draw_internet_radio_tile(model: &AppState, frame: &mut [u16]) {
     // v0.1.36-r31-r2: InternetRadio delegates to dedicated screen module.
     internet_radio_screen::draw(frame, &model.rtc_hms());
@@ -3654,587 +2976,6 @@ fn draw_internet_radio_tile(model: &AppState, frame: &mut [u16]) {
 fn draw_internet_radio_screen(model: &AppState, frame: &mut [u16]) {
     // v0.1.36-r31: explicit screen entry point for InternetRadio dispatch.
     draw_internet_radio_tile(model, frame);
-}
-
-fn draw_music_tile(model: &AppState, frame: &mut [u16]) {
-    // v0.1.36-r36: module-based radio-style Music renderer.
-    // The module clears the old MUSIC.RGB visual shell and keeps accepted
-    // playback/progress/control behavior intact.
-    music_screen::draw(model, frame);
-}
-
-fn draw_music_transport_controls(frame: &mut [u16], playing: bool) {
-    // v0.1.36-r35: five visibly separated media controls.  The touch zones
-    // live in media_controls.rs and match these displayed button centers.
-    // RAW-R35-DRAW-FIVE-MEDIA-CONTROL-ZONES
-    let side_y = media_controls::CONTROL_Y;
-
-    fill_circle(
-        frame,
-        media_controls::VOL_DOWN_X,
-        side_y,
-        media_controls::SIDE_BUTTON_R,
-        BG_DARK,
-    );
-    stroke_circle(
-        frame,
-        media_controls::VOL_DOWN_X,
-        side_y,
-        media_controls::SIDE_BUTTON_R,
-        ACCENT_MUSIC_BLUE,
-    );
-    draw_text_centered_at(
-        frame,
-        media_controls::VOL_DOWN_X,
-        side_y + 3,
-        "VOL-",
-        WHITE,
-        1,
-    );
-
-    fill_circle(
-        frame,
-        media_controls::PREV_X,
-        side_y,
-        media_controls::SIDE_BUTTON_R,
-        BG_DARK,
-    );
-    stroke_circle(
-        frame,
-        media_controls::PREV_X,
-        side_y,
-        media_controls::SIDE_BUTTON_R,
-        ACCENT_MUSIC_BLUE,
-    );
-    draw_skip_icon(frame, media_controls::PREV_X, side_y, false, WHITE);
-
-    fill_circle(
-        frame,
-        media_controls::NEXT_X,
-        side_y,
-        media_controls::SIDE_BUTTON_R,
-        BG_DARK,
-    );
-    stroke_circle(
-        frame,
-        media_controls::NEXT_X,
-        side_y,
-        media_controls::SIDE_BUTTON_R,
-        ACCENT_MUSIC_BLUE,
-    );
-    draw_skip_icon(frame, media_controls::NEXT_X, side_y, true, WHITE);
-
-    fill_circle(
-        frame,
-        media_controls::VOL_UP_X,
-        side_y,
-        media_controls::SIDE_BUTTON_R,
-        BG_DARK,
-    );
-    stroke_circle(
-        frame,
-        media_controls::VOL_UP_X,
-        side_y,
-        media_controls::SIDE_BUTTON_R,
-        ACCENT_MUSIC_BLUE,
-    );
-    draw_text_centered_at(
-        frame,
-        media_controls::VOL_UP_X,
-        side_y + 3,
-        "VOL+",
-        WHITE,
-        1,
-    );
-
-    // Center button: primary play/stop control.
-    fill_circle(
-        frame,
-        media_controls::PLAY_X,
-        media_controls::CENTER_CONTROL_Y,
-        media_controls::CENTER_BUTTON_R,
-        BG_DARK,
-    );
-    stroke_circle(
-        frame,
-        media_controls::PLAY_X,
-        media_controls::CENTER_CONTROL_Y,
-        media_controls::CENTER_BUTTON_R + 1,
-        ACCENT_MUSIC_BLUE,
-    );
-    stroke_circle(
-        frame,
-        media_controls::PLAY_X,
-        media_controls::CENTER_CONTROL_Y,
-        media_controls::CENTER_BUTTON_R - 5,
-        RING_DIM,
-    );
-
-    if playing {
-        fill_rounded_rect(
-            frame,
-            media_controls::PLAY_X - 10,
-            media_controls::CENTER_CONTROL_Y - 21,
-            8,
-            42,
-            4,
-            WHITE,
-        );
-        fill_rounded_rect(
-            frame,
-            media_controls::PLAY_X + 6,
-            media_controls::CENTER_CONTROL_Y - 21,
-            8,
-            42,
-            4,
-            WHITE,
-        );
-    } else {
-        fill_play_triangle(
-            frame,
-            media_controls::PLAY_X + 3,
-            media_controls::CENTER_CONTROL_Y,
-            40,
-            WHITE,
-        );
-    }
-}
-
-fn draw_music_progress_row(frame: &mut [u16], progress: u8, elapsed: &str, duration: &str) {
-    draw_text_centered_at(frame, 77, 288, elapsed, ACCENT_MUSIC_BLUE, 2);
-    draw_text_centered_at(frame, 285, 288, duration, WHITE, 2);
-
-    let track_x = 112;
-    let track_y = 281;
-    let track_w = 136;
-    fill_rounded_rect(frame, track_x, track_y, track_w, 7, 3, RING_DIM);
-
-    let fill_w = ((track_w as u16 * progress.min(100) as u16) / 100) as i32;
-    fill_rounded_rect(
-        frame,
-        track_x,
-        track_y,
-        fill_w.max(6),
-        7,
-        3,
-        ACCENT_MUSIC_BLUE,
-    );
-    fill_circle(
-        frame,
-        track_x + fill_w.max(6),
-        track_y + 3,
-        7,
-        ACCENT_MUSIC_BLUE,
-    );
-}
-
-fn draw_ai_assistant_tile(model: &AppState, frame: &mut [u16]) {
-    // v0.1.12 AI Assistant Option B Conversation Card.
-    // Base asset provides the clean card shell, lower control layout, and subtle screen frame.
-    // Runtime overlays keep listening state, message, timestamp, and mic state live.
-    draw_waveform(
-        frame,
-        180,
-        70,
-        if model.assistant.listening { 22 } else { 14 },
-        ACCENT_ASSISTANT,
-    );
-    draw_text_centered_at(frame, 180, 112, model.assistant.title_label(), WHITE, 3);
-    draw_text_centered_at(frame, 180, 140, model.assistant.subtitle_label(), MUTED, 2);
-
-    draw_assistant_robot_badge(frame, 91, 190, model.assistant.listening);
-    draw_text(frame, 126, 178, model.assistant.card_label(), WHITE, 2);
-    draw_text(frame, 126, 204, model.assistant.card_aux_label(), MUTED, 1);
-
-    draw_microphone_button(frame, 180, 272, model.assistant.listening);
-    draw_cancel_glyph(frame, 116, 272, MUTED);
-}
-
-fn draw_assistant_robot_badge(frame: &mut [u16], cx: i32, cy: i32, listening: bool) {
-    let outer = if listening {
-        ACCENT_ASSISTANT
-    } else {
-        RING_DIM
-    };
-    fill_circle(frame, cx, cy, 25, 0x192A);
-    stroke_circle(frame, cx, cy, 25, outer);
-
-    fill_rounded_rect(frame, cx - 15, cy - 11, 30, 22, 8, BG_DARK);
-    stroke_rect(frame, cx - 15, cy - 11, 30, 22, WHITE);
-    fill_circle(frame, cx - 7, cy, 3, ACCENT_ASSISTANT);
-    fill_circle(frame, cx + 7, cy, 3, ACCENT_ASSISTANT);
-    draw_line(frame, cx, cy - 16, cx, cy - 12, WHITE);
-    fill_circle(frame, cx, cy - 18, 2, WHITE);
-}
-
-fn draw_settings_tile(model: &AppState, frame: &mut [u16]) {
-    if !model.settings.detail_open {
-        draw_text_centered_at(frame, 180, 32, &model.rtc_hms(), MUTED, 1);
-        draw_text_centered_at(frame, 180, 76, "SETTINGS", ACCENT_SETTINGS, 2);
-
-        let rows = if model.settings.overview_page == 0 {
-            [
-                (SettingsPanel::Network, "NETWORK", SettingsIcon::Wifi),
-                (SettingsPanel::Weather, "WEATHER", SettingsIcon::Weather),
-                (SettingsPanel::Time, "TIME", SettingsIcon::Time),
-                (SettingsPanel::Display, "DISPLAY", SettingsIcon::Display),
-            ]
-        } else {
-            [
-                (SettingsPanel::Sound, "SOUND", SettingsIcon::Sound),
-                (SettingsPanel::Storage, "STORAGE", SettingsIcon::Storage),
-                (SettingsPanel::Device, "DEVICE", SettingsIcon::Device),
-                (
-                    SettingsPanel::Diagnostics,
-                    "DIAG",
-                    SettingsIcon::Diagnostics,
-                ),
-            ]
-        };
-
-        for (index, (panel, label, icon)) in rows.iter().enumerate() {
-            draw_settings_list_row(
-                frame,
-                55,
-                96 + index as i32 * 50,
-                label,
-                *icon,
-                model.settings.selected == *panel,
-            );
-        }
-
-        draw_text_centered_at(
-            frame,
-            180,
-            326,
-            &format!("PAGE {} TAP MORE", model.settings.overview_page_label()),
-            MUTED,
-            1,
-        );
-    } else {
-        draw_settings_detail(frame, model);
-    }
-}
-
-#[derive(Clone, Copy)]
-enum SettingsIcon {
-    Wifi,
-    Weather,
-    Time,
-    Display,
-    Sound,
-    Storage,
-    Device,
-    Diagnostics,
-}
-
-fn draw_settings_list_row(
-    frame: &mut [u16],
-    x: i32,
-    y: i32,
-    label: &str,
-    icon: SettingsIcon,
-    selected: bool,
-) {
-    let outline = if selected { ACCENT_SETTINGS } else { RING_DIM };
-    let fill = if selected { 0x1096 } else { BG_DARK };
-
-    fill_rounded_rect(frame, x, y, 250, 38, 16, fill);
-    stroke_rounded_rect(frame, x, y, 250, 38, 16, outline);
-
-    let icon_cx = x + 32;
-    let icon_cy = y + 19;
-    fill_circle(
-        frame,
-        icon_cx,
-        icon_cy,
-        15,
-        if selected { 0x18F8 } else { BG },
-    );
-    stroke_circle(frame, icon_cx, icon_cy, 15, outline);
-    draw_settings_row_icon(frame, icon, icon_cx, icon_cy, WHITE);
-
-    draw_text(frame, x + 74, y + 26, label, WHITE, 2);
-    draw_settings_chevron(frame, x + 226, y + 19, if selected { WHITE } else { MUTED });
-}
-
-fn draw_settings_row_icon(frame: &mut [u16], icon: SettingsIcon, cx: i32, cy: i32, color: u16) {
-    match icon {
-        SettingsIcon::Wifi => draw_wifi_icon(frame, cx, cy - 4, color),
-        SettingsIcon::Weather => draw_sun_icon(frame, cx, cy, 7, color),
-        SettingsIcon::Time => draw_settings_time_icon(frame, cx, cy, color),
-        SettingsIcon::Display => draw_settings_sun_icon(frame, cx, cy, color),
-        SettingsIcon::Sound => draw_settings_sound_icon(frame, cx, cy, color),
-        SettingsIcon::Storage => draw_settings_storage_icon(frame, cx, cy, color),
-        SettingsIcon::Device => draw_settings_info_icon(frame, cx, cy, color),
-        SettingsIcon::Diagnostics => draw_settings_diag_icon(frame, cx, cy, color),
-    }
-}
-
-fn draw_settings_detail(frame: &mut [u16], model: &AppState) {
-    match model.settings.selected {
-        SettingsPanel::Network => draw_settings_network_detail(frame, model),
-        SettingsPanel::Weather => draw_settings_weather_detail(frame, model),
-        SettingsPanel::Time => draw_settings_time_detail(frame, model),
-        SettingsPanel::Display => draw_settings_display_detail(frame, model),
-        SettingsPanel::Sound => draw_settings_sound_detail(frame, model),
-        SettingsPanel::Storage => draw_settings_storage_detail(frame, model),
-        SettingsPanel::Device => draw_settings_device_detail(frame, model),
-        SettingsPanel::Diagnostics => draw_settings_diagnostics_detail(frame, model),
-    }
-}
-
-struct SettingsDetailRow<'a> {
-    label: &'a str,
-    value: &'a str,
-    color: u16,
-}
-
-fn draw_settings_detail_template(
-    frame: &mut [u16],
-    model: &AppState,
-    title: &str,
-    icon: SettingsIcon,
-    primary: &str,
-    rows: &[SettingsDetailRow<'_>],
-    footer: &str,
-) {
-    draw_settings_detail_clean_base(frame);
-    draw_text_centered_at(frame, 180, 32, &model.rtc_hms(), MUTED, 1);
-    draw_text_centered_at(frame, 180, 72, title, ACCENT_SETTINGS, 2);
-
-    fill_circle(frame, 180, 112, 28, BG_DARK);
-    stroke_circle(frame, 180, 112, 28, ACCENT_SETTINGS);
-    draw_settings_row_icon(frame, icon, 180, 112, WHITE);
-
-    draw_text_centered_at(frame, 180, 148, &settings_clip(primary, 16), WHITE, 2);
-
-    let row_y = [174, 208, 242, 276];
-    for (index, row) in rows.iter().take(4).enumerate() {
-        draw_settings_detail_row(
-            frame,
-            row_y[index],
-            row.label,
-            row.value,
-            row.color,
-            index == 0,
-        );
-    }
-
-    draw_text_centered_at(frame, 180, 324, &settings_clip(footer, 22), MUTED, 1);
-}
-
-fn draw_settings_detail_clean_base(frame: &mut [u16]) {
-    // v0.1.22-r5: Settings overview still uses the baked settings_base.rgb565.
-    // Detail pages use a dynamic template, so clear only the baked row/card area
-    // that otherwise shows old left circles and old row outlines behind details.
-    // Keep the outer neon arc, top time, and title visual language intact.
-    fill_rounded_rect(frame, 62, 88, 236, 66, 24, BG);
-    fill_rounded_rect(frame, 48, 150, 264, 42, 18, BG);
-    fill_rounded_rect(frame, 48, 184, 264, 42, 18, BG);
-    fill_rounded_rect(frame, 48, 218, 264, 42, 18, BG);
-    fill_rounded_rect(frame, 48, 252, 264, 42, 18, BG);
-    fill_rounded_rect(frame, 76, 300, 208, 34, 14, BG);
-}
-
-fn draw_settings_detail_row(
-    frame: &mut [u16],
-    y: i32,
-    label: &str,
-    value: &str,
-    value_color: u16,
-    selected: bool,
-) {
-    // Standard detail grid: row x=64 width=232 height=30, label x=82, value x=166.
-    let fill = if selected { 0x1096 } else { BG_DARK };
-    let outline = if selected { ACCENT_SETTINGS } else { RING_DIM };
-
-    fill_rounded_rect(frame, 64, y - 18, 232, 30, 13, fill);
-    stroke_rounded_rect(frame, 64, y - 18, 232, 30, 13, outline);
-
-    draw_text(frame, 82, y + 2, &settings_clip(label, 7), WHITE, 1);
-    draw_text(frame, 166, y + 2, &settings_clip(value, 15), value_color, 1);
-}
-
-fn draw_settings_network_detail(frame: &mut [u16], model: &AppState) {
-    let ssid = model.wifi_ssid_label();
-    let aps = model.wifi_ap_count_label();
-    draw_settings_detail_template(
-        frame,
-        model,
-        "NETWORK",
-        SettingsIcon::Wifi,
-        model.wifi_status_label(),
-        &[
-            SettingsDetailRow {
-                label: "SSID",
-                value: ssid.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "APS",
-                value: aps.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "STATE",
-                value: model.settings.wifi_provisioning_label(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "ERR",
-                value: model.settings.wifi_error_label(),
-                color: MUTED,
-            },
-        ],
-        "TAP IMPORT WIFI.TXT",
-    );
-}
-
-fn draw_settings_weather_detail(frame: &mut [u16], model: &AppState) {
-    let temp = format!(
-        "{} {}",
-        model.weather.temperature_label(),
-        model.weather.condition_label()
-    );
-    draw_settings_detail_template(
-        frame,
-        model,
-        "WEATHER",
-        SettingsIcon::Weather,
-        model.weather.location_label(),
-        &[
-            SettingsDetailRow {
-                label: "TEMP",
-                value: temp.as_str(),
-                color: ACCENT_WEATHER,
-            },
-            SettingsDetailRow {
-                label: "STATUS",
-                value: model.weather.status_label(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "UNITS",
-                value: model.weather.units.suffix(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "CACHE",
-                value: model.weather.last_error_label(),
-                color: MUTED,
-            },
-        ],
-        "TAP CYCLE + FETCH",
-    );
-}
-
-fn draw_settings_time_detail(frame: &mut [u16], model: &AppState) {
-    let time = model.rtc_hms_full();
-    let date = model.rtc_ymd();
-    draw_settings_detail_template(
-        frame,
-        model,
-        "TIME",
-        SettingsIcon::Time,
-        time.as_str(),
-        &[
-            SettingsDetailRow {
-                label: "DATE",
-                value: date.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "SNTP",
-                value: model.time_sync_label(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "SRC",
-                value: model.time_source_label(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "ERR",
-                value: model.time_error_label(),
-                color: MUTED,
-            },
-        ],
-        "RTC + SNTP",
-    );
-}
-
-fn draw_settings_display_detail(frame: &mut [u16], model: &AppState) {
-    let brightness = model.settings.brightness_label();
-    let quiet = if model.settings.quiet_render_enabled {
-        "ON"
-    } else {
-        "OFF"
-    };
-    draw_settings_detail_template(
-        frame,
-        model,
-        "DISPLAY",
-        SettingsIcon::Display,
-        "SLEEP NOW",
-        &[
-            SettingsDetailRow {
-                label: "SLEEP",
-                value: "NOW",
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "WAKE",
-                value: "TOUCH",
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "BRIGHT",
-                value: brightness.as_str(),
-                color: MUTED,
-            },
-            SettingsDetailRow {
-                label: "QUIET",
-                value: quiet,
-                color: MUTED,
-            },
-        ],
-        "TAP SLEEP",
-    );
-}
-
-fn draw_settings_sound_detail(frame: &mut [u16], model: &AppState) {
-    let volume = model.settings.volume_label();
-    draw_settings_detail_template(
-        frame,
-        model,
-        "SOUND",
-        SettingsIcon::Sound,
-        volume.as_str(),
-        &[
-            SettingsDetailRow {
-                label: "VOLUME",
-                value: volume.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "PCM",
-                value: "I2S",
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "PINS",
-                value: "48/38/47",
-                color: MUTED,
-            },
-            SettingsDetailRow {
-                label: "ROUTE",
-                value: "SPEAKER",
-                color: MUTED,
-            },
-        ],
-        "TAP VOLUME",
-    );
 }
 
 fn mjpeg_decode_status_label(status: i32, ok: bool) -> &'static str {
@@ -4255,130 +2996,6 @@ fn mjpeg_decode_status_label(status: i32, ok: bool) -> &'static str {
         -6 => "NO-FRAME",
         _ => "NOT-READY",
     }
-}
-
-fn draw_settings_storage_detail(frame: &mut [u16], model: &AppState) {
-    // RAW-R42-STORAGE-DETAIL-VIDEO-PREVIEW-REMOVED
-    let sd = model.sd_text();
-    let free_total = model.sd_free_total_text();
-
-    draw_settings_detail_template(
-        frame,
-        model,
-        "STORAGE",
-        SettingsIcon::Storage,
-        sd.as_str(),
-        &[
-            SettingsDetailRow {
-                label: "SPACE",
-                value: free_total.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "CARD",
-                value: sd.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-        ],
-        "SD FREE / TOTAL",
-    );
-}
-
-fn draw_settings_device_detail(frame: &mut [u16], model: &AppState) {
-    let primary = model.battery_adc_path_text();
-    let source = model.battery_adc_source_text();
-    let voltage = model.battery_voltage_text();
-    let adc = model.battery_adc_text();
-    let batt = model.battery_percent_detail_text();
-    draw_settings_detail_template(
-        frame,
-        model,
-        "DEVICE",
-        SettingsIcon::Device,
-        primary,
-        &[
-            SettingsDetailRow {
-                label: "BATT",
-                value: batt.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "SOURCE",
-                value: source,
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "ADC",
-                value: adc.as_str(),
-                color: MUTED,
-            },
-            SettingsDetailRow {
-                label: "VOLT",
-                value: voltage.as_str(),
-                color: MUTED,
-            },
-        ],
-        &model.battery_cal_text(),
-    );
-}
-
-fn draw_settings_diagnostics_detail(frame: &mut [u16], model: &AppState) {
-    let touch = model.touch_count_text();
-    let nav = model.nav_count_text();
-    let button = model.button_count_text();
-    draw_settings_detail_template(
-        frame,
-        model,
-        "DIAG",
-        SettingsIcon::Diagnostics,
-        model.last_action,
-        &[
-            SettingsDetailRow {
-                label: "TOUCH",
-                value: touch.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "NAV",
-                value: nav.as_str(),
-                color: ACCENT_SETTINGS,
-            },
-            SettingsDetailRow {
-                label: "BTN",
-                value: button.as_str(),
-                color: MUTED,
-            },
-            SettingsDetailRow {
-                label: "I2C",
-                value: if model.i2c_ok { "OK" } else { "ERR" },
-                color: MUTED,
-            },
-        ],
-        "LAST ACTION",
-    );
-}
-
-fn settings_clip(value: &str, max_chars: usize) -> String {
-    let mut out = String::new();
-    for ch in value.chars() {
-        if out.chars().count() >= max_chars {
-            break;
-        }
-        if ch.is_control() {
-            out.push(' ');
-        } else {
-            out.push(ch);
-        }
-    }
-    out
-}
-
-fn draw_settings_percent_bar(frame: &mut [u16], x: i32, y: i32, w: i32, percent: u8, accent: u16) {
-    let pct = percent.min(100) as i32;
-    let fill_w = ((w * pct) / 100).clamp(0, w);
-    fill_rounded_rect(frame, x, y, w, 8, 4, RING_DIM);
-    fill_rounded_rect(frame, x, y, fill_w, 8, 4, accent);
-    fill_circle(frame, x + fill_w, y + 4, 8, WHITE);
 }
 
 fn draw_watch_outer(frame: &mut [u16], accent: u16) {
@@ -4408,13 +3025,6 @@ fn draw_complication_sd(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
     stroke_circle(frame, cx, cy, 18, color);
     stroke_rect(frame, cx - 7, cy - 10, 14, 18, WHITE);
     fill_rect(frame, cx + 3, cy - 10, 4, 5, BG_DARK);
-}
-
-fn draw_assistant_orb(frame: &mut [u16], cx: i32, cy: i32, r: i32, color: u16) {
-    fill_circle(frame, cx, cy, r, BG_DARK);
-    stroke_circle(frame, cx, cy, r, color);
-    stroke_circle(frame, cx, cy, r - 8, SOFT);
-    fill_circle(frame, cx, cy, 4, color);
 }
 
 fn draw_sun_cloud_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
@@ -4484,27 +3094,6 @@ struct WeatherHourRender {
     icon: WeatherMiniIcon,
 }
 
-fn draw_weather_hour_values(frame: &mut [u16], hourly_slots: &[WeatherHourSlot], condition: &str) {
-    let entries = if hourly_slots.len() >= 4 {
-        hourly_slots
-            .iter()
-            .take(4)
-            .map(|slot| WeatherHourRender {
-                hour: slot.hour_label.clone(),
-                temp: slot.temp_label.clone(),
-                icon: mini_icon_from_weather_code(slot.weather_code),
-            })
-            .collect::<Vec<_>>()
-    } else {
-        fallback_timeline_entries(condition)
-    };
-
-    let centers = [74, 145, 216, 287];
-    for (index, entry) in entries.iter().take(4).enumerate() {
-        draw_weather_timeline_slot(frame, centers[index], entry, index == 0);
-    }
-}
-
 fn fallback_timeline_entries(condition: &str) -> Vec<WeatherHourRender> {
     let raw = match condition {
         "CLEAR" | "LOCAL" => [
@@ -4560,35 +3149,10 @@ fn mini_icon_from_weather_code(code: i32) -> WeatherMiniIcon {
     }
 }
 
-fn draw_weather_timeline_slot(
-    frame: &mut [u16],
-    cx: i32,
-    entry: &WeatherHourRender,
-    highlighted: bool,
-) {
-    // Large Option D slot contract: x=(cx-30..cx+30), y=176..278.
-    // Larger text is allowed because hour, icon, and temperature stay in separate lanes.
-    let hour_color = if highlighted { ACCENT_WEATHER } else { WHITE };
-    draw_text_centered_at(frame, cx, 190, &entry.hour, hour_color, 2);
-    draw_weather_timeline_icon(frame, cx, 226, entry.icon);
-    draw_text_centered_at(frame, cx, 262, &entry.temp, WHITE, 2);
-}
-
 fn draw_tiny_temp_value(frame: &mut [u16], cx: i32, y: i32, text: &str, color: u16) {
     // Kept for future numeric experiments. Large-strip Option D uses scale-2
     // text because the cards are now tall enough for readable hourly temps.
     draw_text_centered_at(frame, cx, y, text, color, 2);
-}
-
-fn draw_weather_timeline_icon(frame: &mut [u16], cx: i32, cy: i32, icon: WeatherMiniIcon) {
-    match icon {
-        WeatherMiniIcon::Sun => draw_timeline_sun_icon(frame, cx, cy, ACCENT_WEATHER),
-        WeatherMiniIcon::PartlyCloudy => draw_timeline_partly_cloudy_icon(frame, cx, cy),
-        WeatherMiniIcon::Cloud => draw_timeline_cloud_icon(frame, cx, cy, WHITE),
-        WeatherMiniIcon::Rain => draw_timeline_rain_icon(frame, cx, cy),
-        WeatherMiniIcon::Storm => draw_timeline_storm_icon(frame, cx, cy),
-        WeatherMiniIcon::Wind => draw_timeline_wind_icon(frame, cx, cy, WHITE),
-    }
 }
 
 fn draw_timeline_sun_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
@@ -4766,23 +3330,6 @@ fn draw_toggle_ring(frame: &mut [u16], cx: i32, cy: i32, on: bool) {
     fill_circle(frame, cx, if on { cy - 54 } else { cy + 54 }, 3, color);
 }
 
-fn draw_settings_row(frame: &mut [u16], y: i32, title: &str, icon: u8) {
-    let icon_color = match icon {
-        0 => MUTED,
-        1 => ACCENT_SETTINGS,
-        2 => SOFT,
-        _ => RING,
-    };
-    fill_circle(frame, 90, y, 18, icon_color);
-    match icon {
-        0 => draw_sun_icon(frame, 90, y, 7, WHITE),
-        1 => draw_wifi_icon(frame, 90, y, WHITE),
-        2 => draw_bell_icon(frame, 90, y, WHITE),
-        _ => draw_mini_gear(frame, 90, y, WHITE),
-    }
-    draw_text(frame, 124, y + 5, title, WHITE, 2);
-}
-
 fn draw_wifi_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
     draw_arc_segment(frame, cx, cy + 6, 13, 1, 220, 320, color);
     draw_arc_segment(frame, cx, cy + 6, 8, 1, 230, 310, color);
@@ -4817,7 +3364,7 @@ fn draw_page_dots(model: &AppState, frame: &mut [u16]) {
         let selected = page == model.current_page;
         let r = if selected { 3 } else { 2 };
         let color = if selected {
-            accent_for_page(page)
+            page_orchestration::accent_for_page(page)
         } else {
             SOFT
         };
@@ -4828,17 +3375,6 @@ fn draw_page_dots(model: &AppState, frame: &mut [u16]) {
             r,
             color,
         );
-    }
-}
-
-fn accent_for_page(page: AssistantPage) -> u16 {
-    match page {
-        AssistantPage::Home => ACCENT_HOME,
-        AssistantPage::Weather => ACCENT_WEATHER,
-        AssistantPage::Music => ACCENT_MUSIC,
-        AssistantPage::InternetRadio => ACCENT_MUSIC,
-        AssistantPage::Assistant => ACCENT_ASSISTANT,
-        AssistantPage::Settings => ACCENT_SETTINGS,
     }
 }
 
@@ -5462,62 +3998,6 @@ fn glyph_5x7(ch: char) -> [u8; 7] {
     }
 }
 
-// v0.1.22-r1 compile repair: Settings Details Hub renderer helpers.
-// These were accidentally removed when the v0.1.22 Settings renderer block
-// replaced the previous Settings Option A detail implementation.
-fn draw_settings_chevron(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
-    draw_line(frame, cx - 5, cy - 8, cx + 5, cy, color);
-    draw_line(frame, cx + 5, cy, cx - 5, cy + 8, color);
-}
-
-fn draw_settings_sun_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
-    stroke_circle(frame, cx, cy, 9, color);
-    draw_line(frame, cx, cy - 16, cx, cy - 12, color);
-    draw_line(frame, cx, cy + 12, cx, cy + 16, color);
-    draw_line(frame, cx - 16, cy, cx - 12, cy, color);
-    draw_line(frame, cx + 12, cy, cx + 16, cy, color);
-    draw_line(frame, cx - 11, cy - 11, cx - 8, cy - 8, color);
-    draw_line(frame, cx + 8, cy + 8, cx + 11, cy + 11, color);
-    draw_line(frame, cx + 8, cy - 8, cx + 11, cy - 11, color);
-    draw_line(frame, cx - 11, cy + 11, cx - 8, cy + 8, color);
-}
-
-fn draw_settings_sound_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
-    fill_rect(frame, cx - 13, cy - 6, 6, 12, color);
-    draw_line(frame, cx - 7, cy - 8, cx + 1, cy - 14, color);
-    draw_line(frame, cx - 7, cy + 8, cx + 1, cy + 14, color);
-    draw_line(frame, cx + 1, cy - 14, cx + 1, cy + 14, color);
-    draw_arc_segment(frame, cx + 3, cy, 8, 1, 312, 48, color);
-    draw_arc_segment(frame, cx + 4, cy, 14, 1, 305, 55, color);
-}
-
-fn draw_settings_info_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
-    stroke_circle(frame, cx, cy, 14, color);
-    fill_circle(frame, cx, cy - 7, 2, color);
-    fill_rect(frame, cx - 1, cy - 2, 2, 11, color);
-    fill_rect(frame, cx - 3, cy + 8, 6, 2, color);
-}
-
-// v0.1.22-r4 compile repair: remaining Settings detail icon helpers.
-fn draw_settings_time_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
-    stroke_circle(frame, cx, cy, 15, color);
-    draw_line(frame, cx, cy, cx, cy - 9, color);
-    draw_line(frame, cx, cy, cx + 8, cy + 5, color);
-}
-
-fn draw_settings_storage_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
-    stroke_rect(frame, cx - 8, cy - 11, 16, 22, color);
-    fill_rect(frame, cx - 5, cy - 7, 3, 4, color);
-    fill_rect(frame, cx, cy - 7, 3, 4, color);
-    draw_line(frame, cx - 5, cy + 6, cx + 5, cy + 6, color);
-}
-
-fn draw_settings_diag_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
-    stroke_rect(frame, cx - 10, cy - 10, 20, 20, color);
-    draw_line(frame, cx - 6, cy - 3, cx - 1, cy + 4, color);
-    draw_line(frame, cx - 1, cy + 4, cx + 8, cy - 6, color);
-}
-
 // v0.1.36-r31: removed legacy r27 station overlay call.
 // v0.1.36-r27: final overlay.  The reused Music-style radio page can still
 // draw compact station initials ("N S H", "I F", "S 1") after the normal
@@ -5528,3 +4008,33 @@ fn draw_settings_diag_icon(frame: &mut [u16], cx: i32, cy: i32, color: u16) {
 // RAW-R42-VIDEO-DEAD-SOURCE-CLEANUP
 
 // RAW-R42-R1-VIDEO-CALLSITE-COMPILE-REPAIR
+
+// RAW-R45-HOME-MODULE-CALLSITE
+
+// RAW-R45-R1-HOME-MODULE-COMPILE-REPAIR
+
+// RAW-R46-R1-WEATHER-MODULE-CALLSITE
+
+// RAW-R47-MUSIC-MODULE-CALLSITE
+
+// RAW-R48-ASSISTANT-MODULE-CALLSITE
+
+// RAW-R49-SETTINGS-MODULE-CALLSITE
+
+// RAW-R51-MAIN-ORCHESTRATION-CALLSITES
+
+// RAW-R51-R1-PAGE-ORCHESTRATION-AFTER-DEBUG-MACRO
+
+// RAW-R52-TOUCH-ROUTER-AFTER-DEBUG-MACRO
+
+// RAW-R52-R1-MAIN-TOUCH-ROUTER-CALLSITE
+
+// RAW-R53-PAGE-ASSETS-MODULE-AFTER-DEBUG-MACRO
+
+// RAW-R54-MEDIA-ACTION-ROUTER-AFTER-DEBUG-MACRO
+
+// RAW-R55-SETTINGS-ACTION-ROUTER-AFTER-DEBUG-MACRO
+
+// RAW-R56-WEATHER-ACTION-ROUTER-AFTER-DEBUG-MACRO
+
+// RAW-R56-R1-WEATHER-ACTION-ROUTER-AFTER-DEBUG-MACRO

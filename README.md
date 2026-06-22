@@ -1,81 +1,112 @@
 # ESP32-S3 Touch LCD 1.85C Assistant
 
-Version: `v0.1.14-r2-weather-guard-marker-repair`
+Current accepted firmware: `v0.1.36-r56-r2`
 
-This is a validator-only repair for the v0.1.14 UI baseline freeze.
+This repository contains the Rust/ESP-IDF assistant firmware for the Waveshare ESP32-S3 Touch LCD 1.85C / 1.85C-BOX class device. The current accepted baseline is a compact round-screen assistant with Weather, Music, Internet Radio, Assistant, and Settings pages.
 
-## Issue fixed
-
-`v0.1.14-r1` correctly removed the stale extra asset:
+## Current accepted UI
 
 ```text
-Removing stale non-frozen RGB565 asset: home_default_base.rgb565
+Home -> Weather -> Music -> InternetRadio -> Assistant -> Settings -> Home
 ```
 
-Then the freeze guard failed because it checked the old Weather timeline temperature marker:
+Video has been removed from the accepted product path. The firmware and validators intentionally preserve the post-Video cleanup baseline.
+
+<!-- RAW-R50-DOCS-NO-SCREEN-INCLUDES -->
+
+## Current accepted features
+
+- SD-backed RGB565 page assets with dynamic overlays.
+- Home screen with status, RTC/time, Wi-Fi, battery, and storage reporting.
+- Weather screen with `Weather Location`, live Open-Meteo fetch/cache, previous/next location nav row, units support, and Mumbai configured as `Asia/Kolkata`.
+- Music screen with accepted WAV/MP3 playback, HELIX MP3 decode, progress display, stop serialization, and dedicated media touch zones.
+- Internet Radio with HTTP MP3, HTTPS playlist/M3U resolve, station names, volume, next/previous, and stop serialization.
+- Settings overview and detail pages with accepted detail navigation and header-back behavior.
+- Software sleep policy with touch wake guard.
+- NORMAL/DEBUG monitor log profiles.
+
+## Hardware target
+
+The firmware is designed for an ESP32-S3 board with a small round LCD, capacitive touch, SD storage, RTC, Wi-Fi, BLE, PSRAM, flash, and I2S audio output. The tested project target is the Waveshare ESP32-S3 Touch LCD 1.85C / 1.85C-BOX class hardware.
+
+Important hardware design constraints are documented in [`docs/HARDWARE.md`](docs/HARDWARE.md).
+
+## Bluetooth speaker limitation
+
+This device should not be treated as a normal phone Bluetooth speaker target. Phones normally stream speaker audio using Bluetooth Classic A2DP. The ESP32-S3 supports Bluetooth LE but does not support Bluetooth Classic / A2DP. For phone-to-device audio, the preferred software-only path is Wi-Fi audio or URL/stream playback over the existing Wi-Fi + MP3/Internet Radio pipeline.
+
+## Architecture overview
+
+The current firmware is intentionally split into focused modules:
 
 ```text
-draw_text_centered_at(frame, cx, 258, entry.temp, WHITE, 2)
+src/screens/*                 page renderers
+src/page_assets.rs            cached page base / asset rendering helpers
+src/page_orchestration.rs     page dispatch and navigation support
+src/touch_router.rs           general touch classification and routing
+src/media_action_router.rs    Music and Internet Radio action routing
+src/settings_action_router.rs Settings detail/action routing
+src/weather_action_router.rs  Weather select/action routing and nav row handling
+src/app/*                     app state, providers, actions, model boundaries
+src/audio_foundation.rs       WAV/MP3 playback and PCM5101 I2S output path
+src/internet_radio.rs         station list, stream/playlist playback state
 ```
 
-The accepted Weather timeline strip currently uses the final repaired baseline:
+More detail is in [`architecture.md`](architecture.md).
+
+## SD card layout
+
+Typical SD files:
 
 ```text
-draw_text_centered_at(frame, cx, 262, entry.temp, WHITE, 2)
+/WIFI.TXT                 optional Wi-Fi credentials import
+/BATTERY.TXT              optional battery calibration
+/AUDIO/*.WAV              local WAV files
+/AUDIO/*.MP3              local MP3 files
+/AUDIO/RADIO~1.TXT        Internet Radio station list
+/assets/*.rgb565          UI page base assets when SD-backed assets are used
+/LOG.TXT                  optional DEBUG log profile/config
 ```
 
-## Repair
+## Build and validate on macOS
 
-This package updates only the regression guard marker from `y=258` to `y=262`.
+```bash
+cd ~/projects/ESP32-S3-Touch-LCD-1.85C-Assistant
 
-It preserves the r1 asset cleanup guard.
+./scripts/validate_assistant_current.sh
 
-## Preserved accepted baseline
+cd firmware/assistant-rs
+cargo build --release
+```
+
+## Flash
+
+Only flash after validation and release build succeed.
+
+```bash
+cd ~/projects/ESP32-S3-Touch-LCD-1.85C-Assistant/firmware/assistant-rs
+cargo espflash flash \
+  --release \
+  --monitor \
+  --port /dev/cu.usbmodem2101
+```
+
+Expected boot banner:
 
 ```text
-Home      v0.1.10-r3
-Weather   v0.1.9-r8-r2 final timeline strip, temp baseline y=262
-Music     v0.1.11
-Assistant v0.1.12
-Settings  v0.1.13-r3
-Touch     r12 gesture-first baseline
+firmware: v0.1.36-r56-r2 ... weather_action_cleanup,weather_nav_buttons,weather_nav_row_touch
+ui: pages=Home,Weather,Music,InternetRadio,Assistant,Settings controls=DEDICATED_MEDIA_ZONES
 ```
 
-## Deploy
+## Release packaging
 
-```powershell
-cd C:\projects\ESP32-S3-Touch-LCD-1.85C-Assistant
-
-Expand-Archive -Force .\ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.14-r2-weather-guard-marker-repair-files.zip .\_v0114r2baseline
-Copy-Item -Recurse -Force .\_v0114r2baseline\ESP32-S3-Touch-LCD-1.85C-Assistant-v0.1.14-r2-weather-guard-marker-repair-files\* .
-
-.\scripts\normalize_assistant_timestamps.ps1
-.\scripts\fix_assistant_partition_path.ps1
-.\scripts\validate_rust_assistant_repo.ps1
-.\scripts\build_assistant_rs.ps1 -Clean
-.\scripts\flash_assistant_rs.ps1 -Port COM8
+```bash
+cd ~/projects/ESP32-S3-Touch-LCD-1.85C-Assistant
+./scripts/package_release.sh
 ```
 
-## Expected validator output
+This creates a clean release zip under `dist/` and excludes build output, cleanup backups, old patch backups, SD-card contents, and historical scratch archives.
 
-```text
-UI baseline freeze validation: OK
-Rust assistant repo validation: OK
-```
+## Release notes
 
-If the stale asset is still present, the validator may first print:
-
-```text
-Removing stale non-frozen RGB565 asset: home_default_base.rgb565
-```
-
-## Expected monitor markers
-
-```text
-v0.1.14-r2 Weather Baseline Guard Marker Repair
-Screens frozen: Home r3 | Weather r8-r2 | Music v0.1.11 | Assistant v0.1.12 | Settings Option A
-Renderer: hybrid RGB565 five page assets + dynamic overlays
-UI baseline: frozen five-screen layout with regression guards
-Asset guard: stale non-frozen RGB565 files are cleaned before validation
-Weather guard: timeline temp marker aligned with accepted y=262 layout
-```
+See [`docs/RELEASE_v0.1.36-r56-r2.md`](docs/RELEASE_v0.1.36-r56-r2.md).

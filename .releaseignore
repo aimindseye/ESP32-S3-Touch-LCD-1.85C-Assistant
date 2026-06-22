@@ -1,0 +1,13 @@
+.git/
+.cleanup/
+dist/
+sdcard/
+**/target/
+**/.embuild/
+**/.v0.1*/
+scripts/_archive_*/
+*.bak
+*.bak.*
+*.orig
+*.tmp
+.DS_Store

@@ -170,6 +170,16 @@ impl WeatherState {
         self.clear_for_config_change("LOCATION");
     }
 
+    pub fn previous_location(&mut self) {
+        self.location_index = if self.location_index == 0 {
+            WEATHER_LOCATIONS.len() - 1
+        } else {
+            self.location_index - 1
+        };
+        self.sync_location_label();
+        self.clear_for_config_change("LOCATION");
+    }
+
     pub fn toggle_units(&mut self) {
         self.units = self.units.toggled();
         self.clear_for_config_change(self.units.label());
@@ -681,3 +691,7 @@ pub const WEATHER_DEFAULT_LOCATION: &str = "JERSEY CITY";
 pub const WEATHER_CACHE_PATH: &str = "/sdcard/WEATHER.TXT";
 pub const WEATHER_PROVIDER_MARKER: &str =
     "v0.1.21-r2 weather center location autofetch: cached city repair";
+
+// RAW-R56-MUMBAI-ASIA-KOLKATA
+
+// RAW-R56-R1-MUMBAI-ASIA-KOLKATA
