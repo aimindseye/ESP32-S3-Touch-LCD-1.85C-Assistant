@@ -56,3 +56,23 @@ Package:
 cd ~/projects/ESP32-S3-Touch-LCD-1.85C-Assistant
 ./scripts/package_release.sh
 ```
+
+## v1.0.1
+
+```bash
+./scripts/validate_assistant_current.sh
+
+cd firmware/assistant-rs
+cargo build --release
+cd ../..
+
+./scripts/package_release.sh
+```
+
+Expected source package:
+
+```text
+dist/ESP32-S3-Touch-LCD-1.85C-Assistant-v1.0.1-source.zip
+```
+
+<!-- RAW-V1-0-1-RELEASE-CHECKLIST -->

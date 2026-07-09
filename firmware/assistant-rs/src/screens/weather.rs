@@ -119,13 +119,11 @@ pub(crate) fn draw_weather_timeline_icon(
 }
 
 // RAW-R56-R1-WEATHER-NAV-BUTTONS
-pub(crate) fn draw_weather_location_nav_buttons(frame: &mut [u16], model: &AppState) {
-    let nav_label = if model.weather.units.suffix() == "C" {
-        "< LOC    C    LOC >"
-    } else {
-        "< LOC    F    LOC >"
-    };
-    draw_text_centered(frame, 318, nav_label, WHITE, 1);
+
+pub(crate) fn draw_weather_location_nav_buttons(frame: &mut [u16], _model: &AppState) {
+    draw_text_centered(frame, 318, "< LOC        LOC >", WHITE, 1);
 }
 
 // RAW-R56-R2-WEATHER-LABEL-REPAIR
+
+// RAW-V1-0-1-WEATHER-NAV-NO-UNITS

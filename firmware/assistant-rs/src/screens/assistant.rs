@@ -18,7 +18,7 @@ pub(crate) fn draw_assistant_page(
         AssistantPage::Home => crate::screens::home::draw_home_tile(model, frame),
         AssistantPage::Weather => crate::screens::weather::draw_weather_tile(model, frame),
         AssistantPage::Music => crate::screens::music::draw_music_tile(model, frame),
-        AssistantPage::InternetRadio => draw_internet_radio_screen(model, frame),
+        AssistantPage::InternetRadio => crate::internet_radio_screen::draw(frame, &model.rtc_hms()),
         AssistantPage::Assistant => draw_ai_assistant_tile(model, frame),
         AssistantPage::Settings => crate::screens::settings::draw_settings_tile(model, frame),
     }
@@ -89,3 +89,5 @@ pub(crate) fn draw_assistant_orb(frame: &mut [u16], cx: i32, cy: i32, r: i32, co
 // RAW-R51-R1-ASSISTANT-CACHED-BASE-CALLSITE
 
 // RAW-R53-ASSISTANT-PAGE-ASSETS-CALLSITE
+
+// RAW-V1-0-1-R10-INTERNET-RADIO-DIRECT-SCREEN-DISPATCH

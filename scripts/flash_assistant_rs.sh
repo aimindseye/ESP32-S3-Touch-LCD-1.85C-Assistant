@@ -39,13 +39,12 @@ if [[ -z "$port" ]]; then
   exit 1
 fi
 
-"$script_dir/normalize_assistant_timestamps.sh"
 "$script_dir/fix_assistant_partition_path.sh"
-"$script_dir/validate_rust_assistant_repo.sh"
+"$script_dir/validate_assistant_current.sh" "$repo_root"
 
 cd "$firmware_dir"
 if [[ "$monitor" == "1" ]]; then
-  cargo +esp espflash flash --release --monitor --port "$port"
+  cargo espflash flash --release --monitor --port "$port"
 else
-  cargo +esp espflash flash --release --port "$port"
+  cargo espflash flash --release --port "$port"
 fi

@@ -24,32 +24,6 @@ typedef struct {
     uint8_t year;
 } st77916_datetime_t;
 
-typedef struct {
-    int32_t status;
-    uint32_t file_count;
-    uint32_t first_file_size;
-    uint32_t first_frame_offset;
-    uint32_t first_frame_size;
-    char first_name[32];
-} st77916_mjpeg_probe_result_t;
-
-typedef struct {
-    int32_t status;
-    uint32_t file_count;
-    uint32_t first_file_size;
-    uint32_t first_frame_offset;
-    uint32_t first_frame_size;
-    uint16_t jpeg_width;
-    uint16_t jpeg_height;
-    uint16_t output_width;
-    uint16_t output_height;
-    uint16_t preview_x;
-    uint16_t preview_y;
-    uint8_t scale_div;
-    uint8_t color_swap;
-    uint32_t decoded_frame_index;
-    char first_name[32];
-} st77916_mjpeg_decode_result_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -75,17 +49,6 @@ int32_t st77916_gpio_get_level(int32_t gpio_num);
 void st77916_configure_runtime_logs(bool debug_enabled);
 int32_t st77916_read_sd_log_txt(uint8_t *out_buf, uint32_t out_len);
 int32_t st77916_read_sd_asset_rgb565(const char *asset_name, uint8_t *out_buf, uint32_t out_len);
-bool st77916_probe_sd_mjpeg_library(st77916_mjpeg_probe_result_t *out_result);
-bool st77916_decode_first_mjpeg_frame_rgb565(st77916_mjpeg_decode_result_t *out_result, uint16_t *out_rgb565, uint32_t out_pixels);
-bool st77916_decode_mjpeg_frame_rgb565(st77916_mjpeg_decode_result_t *out_result, uint16_t *out_rgb565, uint32_t out_pixels, uint32_t frame_index);
-bool st77916_video_worker_start(uint32_t frame_step, uint32_t frame_ms);
-void st77916_video_worker_stop(void);
-void st77916_video_worker_request_next(void);
-bool st77916_video_worker_copy_latest(uint16_t *out_rgb565, uint32_t out_pixels, st77916_mjpeg_decode_result_t *out_result);
-uint32_t st77916_video_worker_state(void);
-uint32_t st77916_video_worker_frame_ms(void);
-uint32_t st77916_video_worker_display_fps(void);
-uint32_t st77916_video_worker_source_skip(void);
 const char *st77916_sd_owner_status(void);
 bool st77916_sd_persistent_mount_session(void);
 bool st77916_sd_persistent_is_ready(void);
@@ -95,3 +58,4 @@ uint32_t st77916_sd_owner_busy_count(void);
 #ifdef __cplusplus
 }
 #endif
+// RAW-V1-0-1-R14-VIDEO-MJPEG-HEADER-REMOVED

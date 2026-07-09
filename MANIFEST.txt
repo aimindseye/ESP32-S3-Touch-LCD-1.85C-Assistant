@@ -1,23 +1,30 @@
 ESP32-S3-Touch-LCD-1.85C-Assistant
-Release: v0.1.36-r56-r2
+Release line: v1.0.1-r13 accepted baseline
+Clean source: v1.0.1-r14 source-directory cleanup
 
 Primary files:
 README.md
 architecture.md
-ARCHITECTURE.md
+userguide.md
+CHANGELOG.md
 docs/HARDWARE.md
-docs/RELEASE_v0.1.36-r56-r2.md
+docs/MAC_DEVELOPMENT.md
+docs/RADIO_TUNING.md
 docs/RELEASE_CHECKLIST.md
+docs/RELEASE_v1.0.1.md
 scripts/validate_assistant_current.sh
+scripts/build_assistant_rs.sh
+scripts/flash_assistant_rs.sh
 scripts/package_release.sh
 firmware/assistant-rs/
 
-Runtime modules:
-firmware/assistant-rs/src/screens/
-firmware/assistant-rs/src/page_assets.rs
-firmware/assistant-rs/src/page_orchestration.rs
-firmware/assistant-rs/src/touch_router.rs
-firmware/assistant-rs/src/media_action_router.rs
-firmware/assistant-rs/src/settings_action_router.rs
-firmware/assistant-rs/src/weather_action_router.rs
-release=v1.0.0
+Removed from active source package:
+- firmware/assistant-rs/components/_archive_*
+- firmware/assistant-rs/docs/ old porting notes
+- tmp/ generated git-diff scratch files
+- docs/ old v0.1.36/v1.0.0 release notes
+- old release helper scripts for historical releases
+- inactive Video/MJPEG C shim code and esp_jpeg dependency
+- stale firmware/assistant-rs/ASSISTANT_README.md and components_esp32s3.lock
+
+<!-- RAW-V1-0-1-R14-CLEAN-MANIFEST -->

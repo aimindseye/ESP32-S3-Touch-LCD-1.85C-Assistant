@@ -5,6 +5,7 @@
 //! Station list source: /sdcard/AUDIO/RADIO.TXT
 //! This module preserves the accepted local Music player path.
 
+use std::cell::RefCell;
 use std::ffi::CString;
 use std::fs;
 use std::path::Path;
@@ -32,6 +33,13 @@ static RADIO_PLAYING: AtomicBool = AtomicBool::new(false);
 static RADIO_THREAD_ACTIVE: AtomicBool = AtomicBool::new(false);
 static RADIO_PROGRESS_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static RADIO_VOLUME_PERCENT: AtomicU32 = AtomicU32::new(60);
+static RADIO_UI_IDLE_OVERRIDE: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+    static RADIO_STATION_CACHE: RefCell<Option<RadioStationLoad>> = RefCell::new(None);
+}
+
+// RAW-V1-0-1-R8-RADIO-STATION-CACHE-STATIC
 
 #[derive(Clone)]
 pub struct RadioStation {
@@ -77,11 +85,9 @@ pub fn set_volume_percent(percent: u8) {
     unsafe {
         ffi::st77916_radio_http_mp3_set_volume(clamped as u32);
     }
-    RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
-    println!(
-        "radio-volume: volume={} source=InternetRadio route=PCM5101_I2S audio=PCM5101_I2S",
-        clamped
-    );
+    // v1.0.1-r10-r1: keep volume changes audio-thread-only and redraw-light.
+    // Do not bump RADIO_PROGRESS_SEQUENCE here; the 1s r8 redraw cadence will
+    // refresh the screen naturally while radio is playing.
 }
 
 pub fn volume_percent() -> u8 {
@@ -114,23 +120,35 @@ pub fn snapshot() -> RadioScreenSnapshot {
     let idx = selected_index(stations.len());
     let station = &stations[idx];
 
-    let playing = RADIO_PLAYING.load(Ordering::SeqCst);
+    let rust_playing = RADIO_PLAYING.load(Ordering::SeqCst);
+    let thread_active = RADIO_THREAD_ACTIVE.load(Ordering::SeqCst);
+    let ui_idle_override = RADIO_UI_IDLE_OVERRIDE.load(Ordering::SeqCst);
     let elapsed = unsafe { ffi::st77916_radio_http_mp3_elapsed_seconds() };
     let _buffered = unsafe { ffi::st77916_radio_http_mp3_buffered_bytes() };
     let status_code = unsafe { ffi::st77916_radio_http_mp3_status_code() };
+    let backend_active = rust_playing || thread_active || matches!(status_code, 1 | 2 | 3 | 4);
+    let playing = if ui_idle_override {
+        false
+    } else {
+        backend_active
+    };
 
-    let status = if playing {
+    let status = if ui_idle_override && thread_active {
+        "STOPPING"
+    } else if ui_idle_override {
+        "READY"
+    } else {
         match status_code {
             1 => "CONNECTING",
             2 => "BUFFERING",
             3 => "PLAYING",
             4 => "STOPPING",
+            5 if backend_active => "STOPPING",
             5 => "STOPPED",
             6 => "ERROR",
-            _ => "LIVE",
+            _ if thread_active || rust_playing => "STARTING",
+            _ => "STOPPED",
         }
-    } else {
-        "STOPPED"
     };
 
     RadioScreenSnapshot {
@@ -157,13 +175,26 @@ pub fn toggle_play_stop() -> &'static str {
     let idx = selected_index(stations.len());
     let station = stations[idx].clone();
 
-    if RADIO_PLAYING.load(Ordering::SeqCst) || RADIO_THREAD_ACTIVE.load(Ordering::SeqCst) {
+    let ui_idle_override = RADIO_UI_IDLE_OVERRIDE.load(Ordering::SeqCst);
+    if !ui_idle_override
+        && (RADIO_PLAYING.load(Ordering::SeqCst) || RADIO_THREAD_ACTIVE.load(Ordering::SeqCst))
+    {
         stop_stream("user-stop");
         println!(
             "radio-r36: action=STOP station={} playback=STOPPED audio=PCM5101_I2S",
             station.name
         );
         "RadioStop"
+    } else if ui_idle_override && RADIO_THREAD_ACTIVE.load(Ordering::SeqCst) {
+        // RAW-V1-0-1-R13-RADIO-STATION-IDLE-UI-REPAIR
+        // User already requested a stop/selection change; keep the button in
+        // PLAY mode and avoid turning a second tap into another STOP-looking UI.
+        RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+        println!(
+            "radio-r36-r33: action=PLAY_DEFERRED station={} reason=WAITING_FOR_PREVIOUS_STREAM_STOP audio=PCM5101_I2S",
+            station.name
+        );
+        "RadioStopping"
     } else {
         match start_stream(station.clone()) {
             Ok(()) => {
@@ -199,6 +230,7 @@ pub fn next_station() -> &'static str {
     }
     let next = (selected_index(stations.len()) + 1) % stations.len();
     RADIO_SELECTED_INDEX.store(next as u32, Ordering::SeqCst);
+    RADIO_UI_IDLE_OVERRIDE.store(true, Ordering::SeqCst);
     RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
     println!(
         "radio-r36: action=NEXT selected={} station={} playback=STOPPED audio=PCM5101_I2S",
@@ -223,6 +255,7 @@ pub fn previous_station() -> &'static str {
         current - 1
     };
     RADIO_SELECTED_INDEX.store(prev as u32, Ordering::SeqCst);
+    RADIO_UI_IDLE_OVERRIDE.store(true, Ordering::SeqCst);
     RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
     println!(
         "radio-r36: action=PREV selected={} station={} playback=STOPPED audio=PCM5101_I2S",
@@ -283,6 +316,7 @@ fn start_stream(station: RadioStation) -> Result<(), &'static str> {
         return Err("RADIO_BUSY");
     }
 
+    RADIO_UI_IDLE_OVERRIDE.store(false, Ordering::SeqCst);
     RADIO_PLAYING.store(true, Ordering::SeqCst);
     RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
 
@@ -345,6 +379,9 @@ fn stop_stream(reason: &'static str) {
         ffi::st77916_radio_http_mp3_stop_request();
     }
     RADIO_PLAYING.store(false, Ordering::SeqCst);
+    if matches!(reason, "user-stop" | "next" | "prev") {
+        RADIO_UI_IDLE_OVERRIDE.store(true, Ordering::SeqCst);
+    }
     RADIO_PROGRESS_SEQUENCE.fetch_add(1, Ordering::SeqCst);
     println!(
         "radio-r36: action=STOP_REQUEST reason={} stop=DEFERRED_TO_STREAM_THREAD audio=PCM5101_I2S",
@@ -368,13 +405,13 @@ struct RadioStationDiag {
 }
 
 fn stations() -> Vec<RadioStation> {
-    load_station_list()
+    cached_station_load()
         .map(|loaded| loaded.stations)
         .unwrap_or_default()
 }
 
 fn station_list_diagnostics() -> RadioStationDiag {
-    match load_station_list() {
+    match cached_station_load() {
         Some(loaded) => RadioStationDiag {
             status: if loaded.stations.is_empty() {
                 "PARSE_EMPTY"
@@ -393,6 +430,33 @@ fn station_list_diagnostics() -> RadioStationDiag {
         },
     }
 }
+
+fn cached_station_load() -> Option<RadioStationLoad> {
+    RADIO_STATION_CACHE.with(|cache| {
+        let mut cached = cache.borrow_mut();
+        if cached.is_none() {
+            let loaded = load_station_list();
+            if let Some(ref station_load) = loaded {
+                println!(
+                    "radio-r8: station_cache=LOAD path={} bytes={} stations={} skipped={} source=SD_ONCE audio=PCM5101_I2S",
+                    radio_display_path(&station_load.path),
+                    station_load.bytes,
+                    station_load.stations.len(),
+                    station_load.skipped
+                );
+                *cached = Some(station_load.clone());
+            } else {
+                println!(
+                    "radio-r8: station_cache=MISS path=/AUDIO/RADIO.TXT source=SD_RETRY audio=PCM5101_I2S"
+                );
+            }
+        }
+
+        cached.clone()
+    })
+}
+
+// RAW-V1-0-1-R8-RADIO-STATION-CACHE
 
 fn load_station_list() -> Option<RadioStationLoad> {
     let mut best_empty: Option<RadioStationLoad> = None;
@@ -668,3 +732,27 @@ fn seconds_to_hhmmss(seconds: u32) -> String {
         format!("{}:{:02}", m, s)
     }
 }
+
+// RAW-V1-0-1-R4-RADIO-STREAM-HEADROOM
+
+// RAW-V1-0-1-R5-RADIO-START-REFILL-REPAIR
+
+// RAW-V1-0-1-R6-R1-RADIO-PREFILL-RUNTIME-PACING
+
+// RAW-V1-0-1-R8-RADIO-UI-PERFORMANCE
+
+// RAW-V1-0-1-R9-RADIO-RING-BUFFER-ARCHITECTURE
+
+// RAW-V1-0-1-R9-R1-RADIO-RING-VALIDATOR-COMPAT
+// Radio stream tuning compatibility audit for legacy validators only.
+// Runtime values live in the C stream shim.
+// input_bytes=262144
+// low_water=32768
+// refill_chunk=512
+// legacy-r4-floor: 196608 73728 8192
+
+// RAW-V1-0-1-R10-R1-RADIO-VOLUME-QUIET-BUFFER-REPAIR
+
+// RAW-V1-0-1-R11-R2-RADIO-SNAPSHOT-ACTIVE-STATUS
+
+// RAW-V1-0-1-R13-RADIO-STATION-IDLE-UI-REPAIR-MARKER

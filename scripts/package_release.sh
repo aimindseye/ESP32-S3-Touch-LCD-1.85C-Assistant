@@ -1,55 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="v1.0.0"
-OUTDIR="dist"
-OUT="$OUTDIR/ESP32-S3-Touch-LCD-1.85C-Assistant-${VERSION}-source.zip"
-mkdir -p "$OUTDIR"
+VERSION="v1.0.1-r13"
+OUT_DIR="dist"
+OUT="$OUT_DIR/ESP32-S3-Touch-LCD-1.85C-Assistant-${VERSION}-clean-source.zip"
+
+./scripts/validate_assistant_current.sh .
+
+mkdir -p "$OUT_DIR"
 rm -f "$OUT"
 
-python3 - <<'PY'
+python3 - "$OUT" <<'PY_PACKAGE'
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
+import sys
 
 root = Path.cwd()
-version = "v1.0.0"
-out = root / "dist" / f"ESP32-S3-Touch-LCD-1.85C-Assistant-{version}-source.zip"
+out = Path(sys.argv[1]).resolve()
 
-exclude_dirs = {
-    ".git", ".cleanup", "target", ".embuild", "build", "dist",
-    "node_modules", "__pycache__", "sdcard",
-}
-exclude_prefixes = ("_archive_", ".v0.1.")
-exclude_suffixes = (".pyc", ".pyo", ".DS_Store", ".bak", ".orig", ".tmp")
-exclude_name_contains = (".bak.", ".pre-", ".v0_1_", ".v0_")
+exclude_dirs = {".git", ".cleanup", "target", ".embuild", "build", "dist", "node_modules", "__pycache__", "sdcard", "tmp"}
+exclude_suffixes = (".pyc", ".pyo", ".DS_Store", ".log", ".zip", ".bak", ".orig", ".tmp")
 
-def keep(path: Path) -> bool:
+files = []
+for path in root.rglob("*"):
+    if not path.is_file():
+        continue
     rel = path.relative_to(root)
-    for part in rel.parts:
-        if part in exclude_dirs:
-            return False
-        if part.startswith(exclude_prefixes):
-            return False
-    name = path.name
-    if name.endswith(exclude_suffixes):
-        return False
-    if any(token in name for token in exclude_name_contains):
-        return False
-    if rel.as_posix().startswith("docs/history/"):
-        return False
-    return path.is_file()
+    parts = rel.parts
+    if any(part in exclude_dirs or part.startswith("_archive_") for part in parts):
+        continue
+    if path.name.endswith(exclude_suffixes):
+        continue
+    files.append(rel.as_posix())
 
 with ZipFile(out, "w", ZIP_DEFLATED) as z:
-    for path in sorted(root.rglob("*")):
-        if keep(path):
-            z.write(path, path.relative_to(root))
+    for rel in sorted(files):
+        z.write(root / rel, rel)
+
+with ZipFile(out, "r") as z:
+    names = z.namelist()
+
+bad = [n for n in names if "/_archive_" in f"/{n}" or "/tmp/" in f"/{n}" or n.startswith("dist/") or n.endswith(".log") or n.endswith(".zip")]
+if bad:
+    for n in bad[:40]:
+        print(f"forbidden package entry: {n}", file=sys.stderr)
+    raise SystemExit(1)
 
 print(out)
-PY
+print(f"files packaged: {len(names)}")
+PY_PACKAGE
 
 ls -lh "$OUT"
 
-# RAW-V1-0-0-PACKAGE-SCRIPT
+# RAW-V1-0-1-R14-CLEAN-PACKAGE-SCRIPT

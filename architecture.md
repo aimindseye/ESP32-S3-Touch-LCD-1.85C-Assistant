@@ -1,106 +1,76 @@
 # Architecture
 
-Current stable release: `v1.0.0`
+Current accepted firmware: **v1.0.1-r13**
 
-## Hardware-driven architecture
+## Page model
 
-The firmware architecture is intentionally shaped by the Waveshare ESP32-S3-Touch-LCD-1.85C hardware.
-
-The ESP32-S3 target provides Wi-Fi and Bluetooth LE, but Bluetooth Classic/A2DP is not supported. For this reason, the design does not treat the device as a standard phone Bluetooth speaker. Music playback, Internet Radio, SD-backed assets, and future phone-to-device audio features should use Wi-Fi, SD card storage, HTTP endpoints, or an external Bluetooth Classic audio receiver module.
-
-The 390x390 ST77916 display, CST816 touch controller, SD card, PCM5101 I2S audio path, PCF85063 RTC, 16MB flash, and 8MB PSRAM drive the current architecture:
-
-- raw RGB565 rendering instead of a heavy graphics stack
-- SD-backed assets, audio, configuration, and cache files
-- serialized MP3 and Internet Radio stop/start ownership around the shared PCM5101 I2S output
-- focused modules for screens, page assets, page orchestration, touch routing, media actions, settings actions, and weather actions
-- no Video page or Video worker in the accepted release baseline
-
-## Runtime page model
-
-The current release page order is:
+The product page order is:
 
 ```text
 Home -> Weather -> Music -> InternetRadio -> Assistant -> Settings -> Home
 ```
 
-The accepted screen modules are:
+The Video page and MJPEG worker path have been removed from the active product architecture.
+
+## Runtime ownership model
+
+The firmware stays intentionally single-owner for UI state, touch handling, and display rendering. Screens are render modules, not independent threads. Background work is limited to subsystems that require it, such as Wi-Fi/time/weather/audio/radio streaming.
+
+## UI/rendering
+
+The UI uses raw RGB565 drawing for predictable RAM/flash behavior on the round ST77916 display. Active drawing code is split into:
+
+- `ui_primitives.rs`: colors, low-level primitives, glyph/text helpers, and numeric drawing
+- `ui_widgets.rs`: reusable watch/weather/music/settings widgets and page dots
+- `page_assets.rs`: SD/embedded page-base rendering cache
+- `screens/*`: page-specific renderers
+
+`main.rs` now focuses on boot, hardware setup, event polling, page orchestration, and render scheduling.
+
+## Touch routing
+
+Touch input is classified by `touch_router.rs` and routed through focused action modules:
+
+- `media_action_router.rs` for Music and Internet Radio
+- `settings_action_router.rs` for Settings
+- `weather_action_router.rs` for Weather
+
+The accepted touch ghost guard remains active. Weather center-unit toggling remains disabled; Weather defaults to Fahrenheit.
+
+## Audio architecture
+
+Music and Internet Radio share the PCM5101 I2S output. Stop/start ownership is serialized to prevent concurrent use of the DAC path.
+
+Local Music uses the accepted WAV/MP3 playback path with HELIX MP3 progress.
+
+Internet Radio uses the accepted r11-r1/r11-r2 architecture:
 
 ```text
-screens::home
-screens::weather
-screens::music
-screens::assistant
-screens::settings
-screens::internet_radio
+HTTP producer task -> PSRAM-backed FreeRTOS StreamBuffer -> MP3 decode/I2S consumer
 ```
 
-## Routing modules
+This keeps network reads out of the decode/write timing path and avoids the rejected r9 custom ring-buffer watchdog failure. The accepted radio UI refresh is conservative and updates status/time without reintroducing stutter.
 
-Current routing and orchestration modules:
+## Storage
 
-- `page_assets.rs` owns cached page-base helpers
-- `page_orchestration.rs` owns page draw/transition orchestration
-- `touch_router.rs` owns general touch summary routing
-- `media_action_router.rs` owns Music and Internet Radio action routing
-- `settings_action_router.rs` owns Settings-specific action routing
-- `weather_action_router.rs` owns Weather location/unit action routing
+The SD card holds user content and optional configuration:
 
-## Audio ownership
+- `/AUDIO/*.WAV` and `/AUDIO/*.MP3`
+- `/AUDIO/RADIO~1.TXT`
+- `/WIFI.TXT`
+- `/BATTERY.TXT`
+- `/ASSETS/*.rgb565`
+- `/LOG.TXT` for DEBUG profile
 
-Music MP3/WAV playback and Internet Radio use the same PCM5101 I2S output path. The firmware preserves stop serialization before switching streams or pages so accepted local playback and radio playback remain stable.
+## C shim boundaries
 
-## Weather design
+ESP-IDF C shims are kept only for hardware/subsystem operations that are safer or already validated in C:
 
-Weather uses configured locations and Open-Meteo fetch/cache behavior. Mumbai remains configured with IANA timezone `Asia/Kolkata`, URL-encoded as `Asia%2FKolkata`.
+- ST77916 panel and SD helpers
+- PCM5101 I2S output
+- HELIX MP3 decode glue
+- Internet Radio HTTP/HTTPS/playlist streaming
 
-<!-- RAW-V1-0-0-ARCHITECTURE -->
+Dead MJPEG/video C shim code, historical `_archive_*` directories, and stale validator compatibility blocks have been removed from the cleaned source tree.
 
----
-
-## Historical architecture notes
-
-# Architecture
-
-
-## Hardware-driven architecture
-
-The firmware architecture is intentionally shaped by the Waveshare ESP32-S3-Touch-LCD-1.85C hardware.
-
-The ESP32-S3 target provides Wi-Fi and Bluetooth LE, but it does not provide Bluetooth Classic/A2DP. For this reason, the design does not treat the device as a standard phone Bluetooth speaker. Music playback, Internet Radio, SD-backed assets, and future phone-to-device audio features should use Wi-Fi, SD card storage, HTTP endpoints, or an external Bluetooth Classic audio receiver module.
-
-The 390x390 ST77916 display, CST816 touch controller, SD card, PCM5101 I2S audio path, PCF85063 RTC, 16MB flash, and 8MB PSRAM drive the current architecture:
-
-- raw RGB565 rendering instead of a heavy graphics stack
-- SD-backed assets, audio, configuration, and cache files
-- serialized MP3 and Internet Radio stop/start ownership around the shared PCM5101 I2S output
-- focused modules for screens, page assets, page orchestration, touch routing, media actions, settings actions, and weather actions
-- no Video page or Video worker in the accepted release baseline
-
-<!-- RAW-R56-R2-HARDWARE-DRIVEN-ARCHITECTURE-TOKEN -->
-
-This file mirrors the current top-level architecture summary. See [`architecture.md`](architecture.md) for the maintained architecture document.
-
-Current accepted firmware: `v1.0.0`.
-
-Key modules:
-
-```text
-screens::*
-page_assets.rs
-page_orchestration.rs
-touch_router.rs
-media_action_router.rs
-settings_action_router.rs
-weather_action_router.rs
-```
-
-Important hardware constraints:
-
-- ESP32-S3 target with Wi-Fi and BLE-only Bluetooth.
-- No Bluetooth Classic / A2DP, so the device is not a standard phone Bluetooth speaker.
-- Raw RGB565 rendering is retained for flash/RAM predictability.
-- SD card is used for assets, audio files, radio station list, and calibration/config files.
-- PCM5101 I2S output path is shared by Music and Internet Radio and must remain serialized.
-
-See [`docs/HARDWARE.md`](docs/HARDWARE.md) and [`docs/RELEASE_v1.0.0.md`](docs/RELEASE_v1.0.0.md).
+<!-- RAW-V1-0-1-R14-CLEAN-ARCHITECTURE -->

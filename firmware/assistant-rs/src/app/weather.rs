@@ -66,7 +66,7 @@ impl WeatherUnits {
 
     pub fn from_label(value: &str) -> Self {
         if value.trim().eq_ignore_ascii_case("C") || value.trim().eq_ignore_ascii_case("CELSIUS") {
-            Self::Celsius
+            Self::Fahrenheit
         } else {
             Self::Fahrenheit
         }
@@ -695,3 +695,5 @@ pub const WEATHER_PROVIDER_MARKER: &str =
 // RAW-R56-MUMBAI-ASIA-KOLKATA
 
 // RAW-R56-R1-MUMBAI-ASIA-KOLKATA
+
+// RAW-V1-0-1-WEATHER-FAHRENHEIT-DEFAULT

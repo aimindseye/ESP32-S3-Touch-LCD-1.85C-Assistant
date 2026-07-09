@@ -219,3 +219,9 @@ No Video page appears
 ```
 
 <!-- RAW-V1-0-0-USERGUIDE -->
+
+## v1.0.1 touch guard note
+
+`v1.0.1` adds a conservative touch ghost guard and disables the Weather center units tap. Weather location previous/next controls remain supported, while Weather units default to Fahrenheit to avoid accidental Celsius switching from phantom taps.
+
+<!-- RAW-V1-0-1-DOC-NOTE -->

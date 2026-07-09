@@ -1,6 +1,6 @@
 [package]
 name = "esp32-s3-touch-lcd-185c-assistant"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 resolver = "2"
 
@@ -36,3 +36,5 @@ esp_idf_sdkconfig_defaults = ["sdkconfig.defaults"]
 component_dirs = ["components/st77916_shim", "components/audio_pcm_shim", "components/chmorgan__esp-libhelix-mp3", "components/audio_mp3_helix_shim", "components/internet_radio_stream_shim"]
 
 # RAW-V1-0-0-CARGO-VERSION
+
+# RAW-V1-0-1-CARGO-VERSION

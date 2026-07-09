@@ -1,37 +1,42 @@
 # Build output
 build/
-.vscode/.browse.c_cpp.db*
-.vscode/ipch/
+dist/
+firmware/assistant-rs/target/
+firmware/assistant-rs/.embuild/
 
-# Arduino / local
+# Local/generated
+.cleanup/
+tmp/
+sdcard/
+*.zip
+*.log
+*.bak
+*.bak.*
+*.orig
+*.tmp
+
+# Secrets / local config
+secrets.h
+wifi_config.h
+assistant_secrets.h
+*.local.h
+
+# Firmware binaries
 *.bin
 *.elf
 *.map
 *.hex
 *.partitions.bin
 *.uf2
-# Secrets / local config
-secrets.h
-wifi_config.h
-assistant_secrets.h
-*.local.h
+
 # OS / editor
 .DS_Store
 Thumbs.db
 *.swp
 *.swo
-# local cleanup/build/release artifacts
-.cleanup/
-dist/
-sdcard/
-firmware/assistant-rs/target/
-firmware/assistant-rs/.embuild/
-firmware/assistant-rs/.v0.1*/
-scripts/_archive_*/
-*.bak
-*.bak.*
-*.orig
-*.tmp
 
-# local monitor logs
-monitor.log
+# Historical archives should not return to active source
+**/_archive_*/
+
+# ESP-IDF managed-component lock file removed from this project
+firmware/assistant-rs/components_esp32s3.lock

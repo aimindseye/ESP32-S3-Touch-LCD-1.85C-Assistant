@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
@@ -55,6 +56,7 @@ bool st77916_audio_pcm_init(uint32_t sample_rate, uint16_t bits_per_sample, uint
     st77916_audio_pcm_stop();
 
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(AUDIO_I2S_PORT, I2S_ROLE_MASTER);
+    // RAW-V1-0-1-R14-I2S-DMA-DEFAULT-RUNTIME
     esp_err_t err = i2s_new_channel(&chan_cfg, &s_tx_chan, NULL);
     if (err != ESP_OK || s_tx_chan == NULL) {
         s_tx_chan = NULL;
@@ -94,6 +96,8 @@ bool st77916_audio_pcm_init(uint32_t sample_rate, uint16_t bits_per_sample, uint
     }
 
     s_ready = true;
+    printf("audio-pcm-r10-r4: status=I2S_DMA_DEFAULT_RESTORED sample_rate=%lu bits=%u channels=%u audio=PCM5101_I2S\n",
+           (unsigned long)sample_rate, (unsigned)bits_per_sample, (unsigned)channels);
     return true;
 }
 
@@ -112,3 +116,5 @@ int32_t st77916_audio_pcm_write(const uint8_t *data, uint32_t len, uint32_t time
 bool st77916_audio_pcm_is_ready(void) {
     return s_ready && s_tx_chan != NULL;
 }
+
+// RAW-V1-0-1-R10-R4-I2S-DMA-DEFAULT-RESTORE-MARKER

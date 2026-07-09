@@ -12,6 +12,11 @@ pub(crate) fn process_touch_summary(
     now: Instant,
     last_navigation: &mut Instant,
 ) -> bool {
+    // RAW-V1-0-1-TOUCH-GHOST-GUARD-CALLSITE
+    if crate::touch_guard::reject_touch_ghost(model) {
+        return false;
+    }
+
     // RAW-R56-R2-WEATHER-NAV-ROW-CALLSITE
     if crate::weather_action_router::maybe_handle_weather_nav_row_touch(model, providers) {
         return true;
@@ -238,3 +243,5 @@ pub(crate) fn audio_r33_is_tap(summary: &TouchSummary) -> bool {
 // RAW-R56-R1-WEATHER-ACTION-FALLBACK-NO-TOUCH-BLOCKS
 
 // RAW-R56-R2-WEATHER-NAV-ROW-CALLSITE-MARKER
+
+// RAW-V1-0-1-TOUCH-GHOST-GUARD-CALLSITE-MARKER
