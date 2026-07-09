@@ -1,11 +1,13 @@
 .git/
 .cleanup/
+tmp/
 dist/
 sdcard/
 **/target/
 **/.embuild/
-**/.v0.1*/
-scripts/_archive_*/
+**/_archive_*/
+*.zip
+*.log
 *.bak
 *.bak.*
 *.orig
